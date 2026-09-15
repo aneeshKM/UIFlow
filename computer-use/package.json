@@ -1,0 +1,25 @@
+{
+  "name": "computer-use",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic browser control for the Northstar bank app",
+  "scripts": {
+    "browser:smoke": "tsx scripts/smokeBrowser.ts",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "openai": "^7.15.0",
+    "playwright": "^1.63.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
