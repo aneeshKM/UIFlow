@@ -4,6 +4,7 @@
   "private": true,
   "description": "LLM-driven browser discovery for the Northstar bank app",
   "scripts": {
+    "artifact:build": "tsx scripts/buildArtifact.ts",
     "browser:smoke": "tsx scripts/smokeBrowser.ts",
     "discover": "tsx scripts/discover.ts",
     "test": "playwright test",

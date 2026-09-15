@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "1.0.0",
+  "capability": {
+    "id": "get-member-savings-balance",
+    "name": "Get member savings balance",
+    "description": "Look up member {{memberId}} and read their current savings balance.",
+    "version": 1
+  },
+  "target": {
+    "app": "bank-app",
+    "baseUrl": "http://localhost:5174"
+  },
+  "inputs": [
+    {
+      "name": "memberId",
+      "type": "string",
+      "required": true,
+      "description": "Value for textbox Member Number."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "currentSavingsBalance",
+      "type": "string"
+    }
+  ],
+  "steps": [
+    {
+      "id": "navigate-members",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "url_matches",
+        "value": "/members"
+      },
+      "action": "navigate",
+      "value": {
+        "literal": "/members"
+      }
+    },
+    {
+      "id": "type-member-number",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Member Number"
+      },
+      "value": {
+        "input": "memberId"
+      }
+    },
+    {
+      "id": "click-search",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "click",
+      "target": {
+        "role": "button",
+        "name": "Search"
+      }
+    },
+    {
+      "id": "wait-for-view",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "link",
+          "name": "View"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "link",
+        "name": "View"
+      }
+    },
+    {
+      "id": "click-view",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "View"
+      }
+    },
+    {
+      "id": "extract-current-savings-balance",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "output_present",
+        "output": "currentSavingsBalance"
+      },
+      "action": "extract",
+      "target": {
+        "role": "row",
+        "name": "Savings"
+      },
+      "output": "currentSavingsBalance",
+      "pattern": "\\$-?[0-9,]+\\.[0-9]{2}"
+    }
+  ],
+  "checkpoint": {
+    "type": "all",
+    "conditions": [
+      {
+        "kind": "visible",
+        "target": {
+          "role": "row",
+          "name": "Savings"
+        }
+      },
+      {
+        "kind": "output_present",
+        "output": "currentSavingsBalance"
+      }
+    ]
+  },
+  "policy": {
+    "allowedActions": [
+      "navigate",
+      "type",
+      "click",
+      "wait_for",
+      "extract"
+    ],
+    "riskLevel": "safe"
+  },
+  "metadata": {
+    "createdAt": "2026-09-15T21:52:18.926Z",
+    "sourceRunId": "e9f7f828-15b2-4651-bbc7-2326bb42b33c"
+  }
+}
