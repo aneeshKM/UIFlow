@@ -1,0 +1,304 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  background: #e5e5e5;
+  color: #222;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  width: 1100px;
+  max-width: calc(100% - 30px);
+  margin: 20px auto;
+  background: white;
+  border: 1px solid #777;
+  min-height: 700px;
+}
+
+.header {
+  min-height: 85px;
+  padding: 15px 22px;
+  background: #17365d;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h1 {
+  margin: 0 0 5px;
+  font-size: 24px;
+}
+
+.header p {
+  margin: 0;
+}
+
+.operator-info {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: right;
+  font-size: 12px;
+}
+
+.navbar {
+  background: #d6d6d6;
+  border-bottom: 1px solid #777;
+  padding: 0 15px;
+  display: flex;
+}
+
+.navbar a {
+  color: #111;
+  text-decoration: none;
+  padding: 11px 20px;
+  border-right: 1px solid #aaa;
+}
+
+.navbar a:hover {
+  background: #bfc7d1;
+}
+
+.content {
+  padding: 25px;
+}
+
+.content h2 {
+  margin-top: 0;
+  font-size: 21px;
+}
+
+.panel {
+  border: 1px solid #999;
+  margin: 20px 0;
+}
+
+.panel-header {
+  background: #d5dce5;
+  border-bottom: 1px solid #999;
+  padding: 9px 12px;
+  font-weight: bold;
+}
+
+.panel-body {
+  padding: 18px;
+}
+
+.panel-actions {
+  padding: 18px;
+  display: flex;
+  gap: 10px;
+}
+
+.notice {
+  padding: 12px;
+  background: #edf3f8;
+  border: 1px solid #a4b7c9;
+}
+
+.admin-scenario-message {
+  margin-top: 15px;
+}
+
+.error-message {
+  padding: 12px;
+  background: #f4dddd;
+  border: 1px solid #b77;
+}
+
+.warning-message {
+  padding: 12px;
+  background: #fff1c7;
+  border: 1px solid #c4a44d;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 10px;
+  border: 1px solid #aaa;
+  text-align: left;
+}
+
+th {
+  background: #e5e5e5;
+}
+
+tr:nth-child(even) {
+  background: #f7f7f7;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.form-group input,
+.form-group select {
+  width: 300px;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid #777;
+}
+
+fieldset {
+  width: 300px;
+  margin-bottom: 20px;
+  border: 1px solid #999;
+}
+
+fieldset label {
+  display: block;
+  padding: 5px;
+}
+
+.primary-button,
+.secondary-button,
+.small-button,
+.danger-button {
+  border: 1px solid #444;
+  padding: 8px 15px;
+  cursor: pointer;
+}
+
+.primary-button {
+  background: #315f8c;
+  color: white;
+}
+
+.secondary-button {
+  background: #e5e5e5;
+  color: #111;
+}
+
+.small-button {
+  padding: 5px 12px;
+  background: #e3e3e3;
+}
+
+.danger-button {
+  background: #9c2d2d;
+  color: white;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  padding: 20px;
+  gap: 20px 40px;
+}
+
+.details-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.large-value {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.footer {
+  margin-top: 40px;
+  padding: 10px 15px;
+  border-top: 1px solid #aaa;
+  background: #eee;
+  font-size: 12px;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #d8d8d8;
+}
+
+.login-box {
+  width: 420px;
+  background: white;
+  border: 1px solid #666;
+}
+
+.login-header {
+  background: #17365d;
+  color: white;
+  padding: 20px;
+}
+
+.login-header h1 {
+  margin: 0 0 5px;
+}
+
+.login-header p {
+  margin: 0;
+}
+
+.login-box form {
+  padding: 25px;
+}
+
+.login-warning {
+  margin: 20px 25px 0;
+}
+
+.login-box .form-group input {
+  width: 100%;
+}
+
+.login-help {
+  margin: 0;
+  padding: 12px 25px;
+  background: #eee;
+  border-top: 1px solid #bbb;
+  font-size: 12px;
+}
+
+.search-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.search-form .form-group {
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-form {
+    display: block;
+  }
+
+  .search-form .form-group {
+    margin-bottom: 10px;
+  }
+
+  .navbar {
+    overflow-x: auto;
+  }
+}
