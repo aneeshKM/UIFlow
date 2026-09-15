@@ -1,0 +1,309 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
+import type { ActionPolicy } from "../policy/ActionPolicy.js";
+import { PolicyViolation } from "../policy/ActionPolicy.js";
+import { DiscoveryRunState } from "./runState.js";
+import type {
+  ActionExecutionResult,
+  AgentDecision,
+  AgentModel,
+  AgentRunStatus,
+  AgentStep,
+  AgentTarget,
+  DiscoveryEvidencePaths,
+  DiscoveryRun,
+} from "./types.js";
+
+export interface DiscoveryBrowserActions {
+  navigate(url: string): Promise<ActionResult>;
+  click(target: LocatorSpec): Promise<ActionResult>;
+  fill(target: LocatorSpec, value: string): Promise<ActionResult>;
+  readText(target: LocatorSpec): Promise<ActionResult<string>>;
+  waitFor(target: LocatorSpec): Promise<ActionResult>;
+  wait(durationMs?: number): Promise<ActionResult>;
+}
+
+export interface DiscoverySurfaceObserver {
+  observe(): Promise<SurfaceObservation>;
+  captureScreenshot(): Promise<Buffer>;
+}
+
+export interface DiscoveryAgentOptions {
+  maxSteps: number;
+  timeoutMs: number;
+  runId?: string;
+  evidenceDirectory?: string;
+  tracePath?: string;
+  waitDurationMs?: number;
+  onStep?: (step: AgentStep) => void | Promise<void>;
+  now?: () => Date;
+}
+
+class DiscoveryTimeoutError extends Error {
+  constructor() {
+    super("Discovery timed out.");
+    this.name = "DiscoveryTimeoutError";
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /password|passcode|secret|api[_-]?key|token|authorization|cookie|session[_-]?id/i.test(key);
+}
+
+function redactString(value: string): string {
+  return value
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, "$1[REDACTED]")
+    .replace(/((?:authorization|cookie|session[_ -]?id)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]");
+}
+
+function redactValue(value: unknown, key = ""): unknown {
+  if (isSensitiveKey(key)) return "[REDACTED]";
+  if (typeof value === "string") return redactString(value);
+  if (Array.isArray(value)) return value.map((item) => redactValue(item));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([childKey, childValue]) => [childKey, redactValue(childValue, childKey)]),
+    );
+  }
+  return value;
+}
+
+export function redactDiscoveryRun(run: DiscoveryRun): DiscoveryRun {
+  const safeRun = redactValue(run) as DiscoveryRun;
+  for (const step of safeRun.steps) {
+    const decision = step.decision;
+    const targetName = `${decision?.target?.name ?? ""} ${decision?.target?.text ?? ""}`;
+    if (decision?.value !== undefined && isSensitiveKey(targetName)) {
+      decision.value = "[REDACTED]";
+    }
+  }
+  return safeRun;
+}
+
+function targetToLocator(target: AgentTarget): LocatorSpec {
+  if (target.role !== undefined) {
+    return { strategy: "role", role: target.role, ...(target.name === undefined ? {} : { name: target.name }) };
+  }
+  if (target.text !== undefined) return { strategy: "text", text: target.text };
+  throw new Error("The policy accepted a target that cannot be resolved.");
+}
+
+function fromBrowserResult(
+  action: AgentDecision["action"],
+  result: ActionResult<unknown>,
+): ActionExecutionResult {
+  return {
+    success: result.success,
+    action,
+    ...(typeof result.data === "string" ? { value: result.data } : {}),
+    ...(result.error === undefined
+      ? {}
+      : { error: { type: result.error.type, message: result.error.message } }),
+  };
+}
+
+async function withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw new DiscoveryTimeoutError();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new DiscoveryTimeoutError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    operation.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+export class DiscoveryAgent {
+  private readonly now: () => Date;
+
+  constructor(
+    private readonly model: AgentModel,
+    private readonly observer: DiscoverySurfaceObserver,
+    private readonly actions: DiscoveryBrowserActions,
+    private readonly policy: ActionPolicy,
+    private readonly options: DiscoveryAgentOptions,
+  ) {
+    if (!Number.isInteger(options.maxSteps) || options.maxSteps < 1) {
+      throw new Error("maxSteps must be a positive integer.");
+    }
+    if (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 1) {
+      throw new Error("timeoutMs must be positive.");
+    }
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async run(goal: string): Promise<DiscoveryRun> {
+    const trimmedGoal = goal.trim();
+    if (!trimmedGoal) throw new Error("Discovery goal must not be empty.");
+
+    const state = new DiscoveryRunState(trimmedGoal, this.options.runId, this.now);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    timeout.unref();
+
+    try {
+      while (state.currentStep < this.options.maxSteps) {
+        let observation: SurfaceObservation;
+        try {
+          observation = await withAbort(this.observer.observe(), controller.signal);
+        } catch (error) {
+          return this.complete(
+            state,
+            error instanceof DiscoveryTimeoutError ? "stopped" : "failure",
+            error instanceof DiscoveryTimeoutError ? "timeout" : `observation_error: ${errorMessage(error)}`,
+          );
+        }
+
+        const step = state.recordObservation(observation);
+        let decision: AgentDecision;
+        try {
+          decision = await withAbort(this.model.decideNextAction({
+            goal: trimmedGoal,
+            step: step.step,
+            maxSteps: this.options.maxSteps,
+            observation,
+            previousDecision: state.lastDecision,
+            previousResult: state.lastResult,
+            extractedOutputs: state.extractedOutputs,
+            signal: controller.signal,
+          }), controller.signal);
+        } catch (error) {
+          return this.complete(
+            state,
+            error instanceof DiscoveryTimeoutError || controller.signal.aborted ? "stopped" : "failure",
+            error instanceof DiscoveryTimeoutError || controller.signal.aborted
+              ? "timeout"
+              : `llm_error: ${errorMessage(error)}`,
+          );
+        }
+
+        state.recordDecision(step, decision);
+        try {
+          this.policy.validate(decision, observation.url);
+        } catch (error) {
+          const result: ActionExecutionResult = {
+            success: false,
+            action: decision.action,
+            error: {
+              type: error instanceof PolicyViolation ? "POLICY_REJECTED" : "POLICY_ERROR",
+              message: errorMessage(error),
+            },
+          };
+          state.recordResult(step, result);
+          await this.reportStep(step);
+          return this.complete(state, "failure", `policy_rejected: ${result.error?.message}`);
+        }
+
+        let result: ActionExecutionResult;
+        try {
+          result = await withAbort(this.execute(decision, observation.url), controller.signal);
+        } catch (error) {
+          if (error instanceof DiscoveryTimeoutError || controller.signal.aborted) {
+            return this.complete(state, "stopped", "timeout");
+          }
+          result = {
+            success: false,
+            action: decision.action,
+            error: { type: "ACTION_EXCEPTION", message: errorMessage(error) },
+          };
+        }
+
+        state.recordResult(step, result);
+        if (decision.action === "read" && result.success && result.value !== undefined && decision.outputName !== undefined) {
+          state.setOutput(decision.outputName, result.value);
+        }
+        if (decision.action === "finish" && decision.result !== undefined) state.setOutputs(decision.result);
+        await this.reportStep(step);
+
+        if (decision.action === "finish") return this.complete(state, "success", undefined);
+        if (decision.action === "fail") return this.complete(state, "failure", `model_failed: ${decision.reason}`);
+      }
+
+      return this.complete(state, "stopped", "max_steps");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async execute(decision: AgentDecision, currentUrl: string): Promise<ActionExecutionResult> {
+    switch (decision.action) {
+      case "click":
+        return fromBrowserResult("click", await this.actions.click(targetToLocator(decision.target!)));
+      case "type":
+        return fromBrowserResult("type", await this.actions.fill(targetToLocator(decision.target!), decision.value!));
+      case "read":
+        return fromBrowserResult("read", await this.actions.readText(targetToLocator(decision.target!)));
+      case "navigate":
+        return fromBrowserResult("navigate", await this.actions.navigate(new URL(decision.value!, currentUrl).toString()));
+      case "wait":
+        return fromBrowserResult(
+          "wait",
+          decision.target === undefined
+            ? await this.actions.wait(this.options.waitDurationMs ?? 500)
+            : await this.actions.waitFor(targetToLocator(decision.target)),
+        );
+      case "finish":
+        return { success: true, action: "finish" };
+      case "fail":
+        return {
+          success: false,
+          action: "fail",
+          error: { type: "MODEL_FAILED", message: decision.reason },
+        };
+    }
+  }
+
+  private async reportStep(step: AgentStep): Promise<void> {
+    try {
+      await this.options.onStep?.(step);
+    } catch {
+      // Reporting must not alter browser execution.
+    }
+  }
+
+  private async complete(
+    state: DiscoveryRunState,
+    status: Exclude<AgentRunStatus, "running">,
+    reason: string | undefined,
+  ): Promise<DiscoveryRun> {
+    let run = state.finish(status, reason, this.now);
+    if (this.options.evidenceDirectory === undefined) return run;
+
+    const evidence: DiscoveryEvidencePaths = {
+      json: join(this.options.evidenceDirectory, `discovery-${state.runId}.json`),
+      screenshot: join(this.options.evidenceDirectory, `discovery-${state.runId}.png`),
+      ...(this.options.tracePath === undefined ? {} : { trace: this.options.tracePath }),
+    };
+    state.setEvidence(evidence);
+
+    try {
+      await mkdir(this.options.evidenceDirectory, { recursive: true });
+      await writeFile(evidence.screenshot, await this.observer.captureScreenshot());
+      run = state.snapshot();
+      await writeFile(evidence.json, `${JSON.stringify(redactDiscoveryRun(run), null, 2)}\n`, "utf8");
+      return run;
+    } catch (error) {
+      run = state.finish("failure", `evidence_error: ${errorMessage(error)}`, this.now);
+      try {
+        await mkdir(this.options.evidenceDirectory, { recursive: true });
+        await writeFile(evidence.json, `${JSON.stringify(redactDiscoveryRun(run), null, 2)}\n`, "utf8");
+      } catch {
+        // The structured return still reports the evidence failure.
+      }
+      return run;
+    }
+  }
+}

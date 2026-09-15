@@ -113,6 +113,14 @@ export class BrowserActions {
     }, target);
   }
 
+  wait(durationMs = 500): Promise<ActionResult> {
+    const boundedDuration = Math.min(Math.max(durationMs, 0), 2_000);
+    return this.run("wait", async () => {
+      await this.session.getPage().waitForTimeout(boundedDuration);
+      return undefined;
+    });
+  }
+
   screenshot(path: string): Promise<ActionResult<string>> {
     return this.run("screenshot", async () => {
       await mkdir(dirname(path), { recursive: true });

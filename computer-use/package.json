@@ -2,9 +2,10 @@
   "name": "computer-use",
   "version": "1.0.0",
   "private": true,
-  "description": "Deterministic browser control for the Northstar bank app",
+  "description": "LLM-driven browser discovery for the Northstar bank app",
   "scripts": {
     "browser:smoke": "tsx scripts/smokeBrowser.ts",
+    "discover": "tsx scripts/discover.ts",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit"

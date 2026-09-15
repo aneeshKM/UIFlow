@@ -3,5 +3,7 @@ dist/
 .env
 evidence/screenshots/*.png
 evidence/traces/*.zip
+evidence/discovery/*
+!evidence/discovery/.gitkeep
 test-results/
 playwright-report/

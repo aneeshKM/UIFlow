@@ -1,0 +1,99 @@
+import { randomUUID } from "node:crypto";
+import type {
+  ActionExecutionResult,
+  AgentDecision,
+  AgentRunStatus,
+  AgentStep,
+  DiscoveryEvidencePaths,
+  DiscoveryRun,
+} from "./types.js";
+import type { SurfaceObservation } from "../browser/types.js";
+
+export class DiscoveryRunState {
+  readonly runId: string;
+  readonly goal: string;
+  readonly startedAt: string;
+  private readonly steps: AgentStep[] = [];
+  private readonly outputs: Record<string, string> = {};
+  private status: AgentRunStatus = "running";
+  private completedAt?: string;
+  private stopReason?: string;
+  private evidence?: DiscoveryEvidencePaths;
+  private previousDecision?: AgentDecision;
+  private previousResult?: ActionExecutionResult;
+
+  constructor(goal: string, runId: string = randomUUID(), now: () => Date = () => new Date()) {
+    this.runId = runId;
+    this.goal = goal;
+    this.startedAt = now().toISOString();
+  }
+
+  get currentStep(): number {
+    return this.steps.length;
+  }
+
+  get lastDecision(): AgentDecision | undefined {
+    return this.previousDecision;
+  }
+
+  get lastResult(): ActionExecutionResult | undefined {
+    return this.previousResult;
+  }
+
+  get extractedOutputs(): Record<string, string> {
+    return { ...this.outputs };
+  }
+
+  recordObservation(observation: SurfaceObservation): AgentStep {
+    const step: AgentStep = {
+      step: this.steps.length + 1,
+      url: observation.url,
+      observation,
+    };
+    this.steps.push(step);
+    return step;
+  }
+
+  recordDecision(step: AgentStep, decision: AgentDecision): void {
+    step.decision = decision;
+    this.previousDecision = decision;
+  }
+
+  recordResult(step: AgentStep, result: ActionExecutionResult): void {
+    step.result = result;
+    this.previousResult = result;
+  }
+
+  setOutput(name: string, value: string): void {
+    this.outputs[name] = value;
+  }
+
+  setOutputs(outputs: Record<string, string>): void {
+    Object.assign(this.outputs, outputs);
+  }
+
+  setEvidence(evidence: DiscoveryEvidencePaths): void {
+    this.evidence = evidence;
+  }
+
+  finish(status: Exclude<AgentRunStatus, "running">, reason: string | undefined, now: () => Date): DiscoveryRun {
+    this.status = status;
+    this.stopReason = reason;
+    this.completedAt = now().toISOString();
+    return this.snapshot();
+  }
+
+  snapshot(): DiscoveryRun {
+    return {
+      runId: this.runId,
+      goal: this.goal,
+      startedAt: this.startedAt,
+      ...(this.completedAt === undefined ? {} : { completedAt: this.completedAt }),
+      status: this.status,
+      steps: this.steps.map((step) => ({ ...step })),
+      ...(Object.keys(this.outputs).length === 0 ? {} : { outputs: { ...this.outputs } }),
+      ...(this.stopReason === undefined ? {} : { stopReason: this.stopReason }),
+      ...(this.evidence === undefined ? {} : { evidence: { ...this.evidence } }),
+    };
+  }
+}
