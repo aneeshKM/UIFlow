@@ -27,8 +27,11 @@ export class BrowserSession {
     return this.page;
   }
 
-  async navigate(url: string): Promise<void> {
-    await this.getPage().goto(url, { waitUntil: "domcontentloaded" });
+  async navigate(url: string, timeoutMs?: number): Promise<void> {
+    await this.getPage().goto(url, {
+      waitUntil: "domcontentloaded",
+      ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
+    });
   }
 
   async startTrace(): Promise<void> {

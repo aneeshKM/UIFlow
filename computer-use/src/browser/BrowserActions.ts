@@ -62,29 +62,29 @@ export class BrowserActions {
     }
   }
 
-  navigate(url: string): Promise<ActionResult> {
+  navigate(url: string, timeoutMs?: number): Promise<ActionResult> {
     return this.run("navigate", async () => {
-      await this.session.navigate(url);
+      await this.session.navigate(url, timeoutMs);
       return undefined;
     });
   }
 
-  click(target: LocatorSpec): Promise<ActionResult> {
+  click(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult> {
     return this.run("click", async () => {
-      await this.locator(target).click();
+      await this.locator(target).click({ timeout: timeoutMs });
       return undefined;
     }, target);
   }
 
-  fill(target: LocatorSpec, value: string): Promise<ActionResult> {
+  fill(target: LocatorSpec, value: string, timeoutMs?: number): Promise<ActionResult> {
     return this.run("fill", async () => {
-      await this.locator(target).fill(value);
+      await this.locator(target).fill(value, { timeout: timeoutMs });
       return undefined;
     }, target);
   }
 
-  readText(target: LocatorSpec): Promise<ActionResult<string>> {
-    return this.run("readText", () => this.locator(target).innerText(), target);
+  readText(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult<string>> {
+    return this.run("readText", () => this.locator(target).innerText({ timeout: timeoutMs }), target);
   }
 
   getValue(target: LocatorSpec): Promise<ActionResult<string>> {
@@ -102,13 +102,13 @@ export class BrowserActions {
     }, target);
   }
 
-  isVisible(target: LocatorSpec): Promise<ActionResult<boolean>> {
-    return this.run("isVisible", () => this.locator(target).isVisible(), target);
+  isVisible(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult<boolean>> {
+    return this.run("isVisible", () => this.locator(target).isVisible({ timeout: timeoutMs }), target);
   }
 
-  waitFor(target: LocatorSpec, state: WaitState = "visible"): Promise<ActionResult> {
+  waitFor(target: LocatorSpec, state: WaitState = "visible", timeoutMs?: number): Promise<ActionResult> {
     return this.run("waitFor", async () => {
-      await this.locator(target).waitFor({ state });
+      await this.locator(target).waitFor({ state, timeout: timeoutMs });
       return undefined;
     }, target);
   }

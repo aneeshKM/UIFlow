@@ -5,5 +5,7 @@ evidence/screenshots/*.png
 evidence/traces/*.zip
 evidence/discovery/*
 !evidence/discovery/.gitkeep
+evidence/replay/*
+!evidence/replay/.gitkeep
 test-results/
 playwright-report/
