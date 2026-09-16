@@ -106,6 +106,33 @@ function successfulRun(): DiscoveryRun {
   };
 }
 
+function successfulCollectionRun(): DiscoveryRun {
+  const run = successfulRun();
+  const read = run.steps.find((step) => step.decision?.action === "read")!;
+  const records = [
+    { accountNumber: "****5005", availableBalance: "$0.00", status: "Open" },
+    { accountNumber: "****5006", availableBalance: "$1,000.00", status: "Open" },
+  ];
+  read.decision = {
+    action: "read_many",
+    target: { role: "row", name: "Savings" },
+    outputName: "savingsAccounts",
+    outputFields: ["accountNumber", "availableBalance", "status"],
+    extractionPattern: "Savings\\s+(\\*{4}\\d{4})\\s+(\\$-?[\\d,]+\\.\\d{2})\\s+(\\S+)",
+    decisionSummary: "Every visible Savings row is required by the goal.",
+  };
+  read.result = { success: true, action: "read_many", value: records };
+  const finish = run.steps.find((step) => step.decision?.action === "finish")!;
+  finish.decision = {
+    action: "finish",
+    decisionSummary: "All Savings records have been extracted and verified.",
+    result: { savingsAccounts: records },
+  };
+  run.goal = "Look up member 12345 and return all Savings account records.";
+  run.outputs = { savingsAccounts: records };
+  return run;
+}
+
 test("builds a validated, parameterized artifact from a successful discovery", () => {
   const artifact = new ArtifactBuilder({ now: () => new Date(timestamp) }).build(successfulRun());
 
@@ -126,6 +153,10 @@ test("builds a validated, parameterized artifact from a successful discovery", (
     target: { role: "link", name: "View" },
   }));
   expect(artifact.steps).toContainEqual(expect.objectContaining({
+    action: "wait_for",
+    target: { role: "heading", name: "Member Information" },
+  }));
+  expect(artifact.steps).toContainEqual(expect.objectContaining({
     action: "extract",
     target: { role: "row", name: "Savings" },
     output: "currentSavingsBalance",
@@ -135,6 +166,28 @@ test("builds a validated, parameterized artifact from a successful discovery", (
     kind: "output_present",
     output: "currentSavingsBalance",
   });
+  expect(() => new ArtifactValidator().validate(artifact)).not.toThrow();
+});
+
+test("builds a record-list output and extract_many step from collection discovery", () => {
+  const artifact = new ArtifactBuilder({ now: () => new Date(timestamp) }).build(successfulCollectionRun());
+
+  expect(artifact.outputs).toEqual([{
+    name: "savingsAccounts",
+    type: "record_list",
+    fields: [
+      { name: "accountNumber", type: "string" },
+      { name: "availableBalance", type: "string" },
+      { name: "status", type: "string" },
+    ],
+  }]);
+  expect(artifact.steps).toContainEqual(expect.objectContaining({
+    action: "extract_many",
+    target: { role: "row", name: "Savings" },
+    output: "savingsAccounts",
+    fields: ["accountNumber", "availableBalance", "status"],
+  }));
+  expect(JSON.stringify(artifact)).not.toContain("****5005");
   expect(() => new ArtifactValidator().validate(artifact)).not.toThrow();
 });
 

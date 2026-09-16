@@ -62,6 +62,7 @@ export class ArtifactValidator {
     const issues: string[] = [];
     const inputNames = new Set(artifact.inputs.map(({ name }) => name));
     const outputNames = new Set(artifact.outputs.map(({ name }) => name));
+    const outputsByName = new Map(artifact.outputs.map((output) => [output.name, output]));
     const allowedActions = new Set(artifact.policy.allowedActions);
 
     for (const name of duplicateNames(artifact.inputs.map(({ name }) => name))) {
@@ -94,14 +95,35 @@ export class ArtifactValidator {
           }
         }
       }
-      if (step.action === "extract" && !outputNames.has(step.output)) {
+      if ((step.action === "extract" || step.action === "extract_many") && !outputNames.has(step.output)) {
         issues.push(`steps.${index}.output: unknown output "${step.output}"`);
       }
-      if (step.action === "extract" && step.pattern !== undefined) {
+      if ((step.action === "extract" || step.action === "extract_many") && step.pattern !== undefined) {
         try {
           new RegExp(step.pattern);
         } catch {
           issues.push(`steps.${index}.pattern: must be a valid regular expression`);
+        }
+      }
+      if (step.action === "extract") {
+        const output = outputsByName.get(step.output);
+        if (output !== undefined && output.type !== "string") {
+          issues.push(`steps.${index}.output: extract requires a string output`);
+        }
+      }
+      if (step.action === "extract_many") {
+        const output = outputsByName.get(step.output);
+        if (output !== undefined && output.type !== "record_list") {
+          issues.push(`steps.${index}.output: extract_many requires a record_list output`);
+        }
+        if (output?.type === "record_list") {
+          const declaredFields = output.fields?.map(({ name }) => name) ?? [];
+          if (JSON.stringify(step.fields) !== JSON.stringify(declaredFields)) {
+            issues.push(`steps.${index}.fields: must match the output record fields in order`);
+          }
+        }
+        for (const field of duplicateNames(step.fields)) {
+          issues.push(`steps.${index}.fields: duplicate field "${field}"`);
         }
       }
       const expectedOutput = collectConditionOutput(step.expected);
@@ -124,8 +146,9 @@ export class ArtifactValidator {
     });
 
     for (const output of outputNames) {
-      if (!artifact.steps.some((step) => step.action === "extract" && step.output === output)) {
-        issues.push(`outputs: "${output}" has no extract step`);
+      if (!artifact.steps.some((step) =>
+        (step.action === "extract" || step.action === "extract_many") && step.output === output)) {
+        issues.push(`outputs: "${output}" has no extraction step`);
       }
     }
 

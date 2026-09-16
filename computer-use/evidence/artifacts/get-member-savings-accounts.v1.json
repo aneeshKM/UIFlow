@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "1.0.0",
+  "capability": {
+    "id": "get-member-savings-accounts",
+    "name": "Get Member Savings Accounts",
+    "description": "Look up member {{memberId}} and return every Savings account with its masked account number, available balance as a currency string including the dollar sign, and status.",
+    "version": 1
+  },
+  "target": {
+    "app": "bank-app",
+    "baseUrl": "http://localhost:5174"
+  },
+  "inputs": [
+    {
+      "name": "memberId",
+      "type": "string",
+      "required": true,
+      "description": "Value for textbox Member Number."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "savingsAccounts",
+      "type": "record_list",
+      "fields": [
+        {
+          "name": "maskedAccountNumber",
+          "type": "string"
+        },
+        {
+          "name": "availableBalance",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "navigate-dashboard",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "url_matches",
+        "value": "/dashboard"
+      },
+      "action": "navigate",
+      "value": {
+        "literal": "/dashboard"
+      }
+    },
+    {
+      "id": "click-members",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "Members"
+      }
+    },
+    {
+      "id": "wait-for-member-search",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "heading",
+          "name": "Member Search"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "heading",
+        "name": "Member Search"
+      }
+    },
+    {
+      "id": "type-member-number",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "type",
+      "target": {
+        "role": "textbox",
+        "name": "Member Number"
+      },
+      "value": {
+        "input": "memberId"
+      }
+    },
+    {
+      "id": "click-search",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "click",
+      "target": {
+        "role": "button",
+        "name": "Search"
+      }
+    },
+    {
+      "id": "wait-for-view",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "link",
+          "name": "View"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "link",
+        "name": "View"
+      }
+    },
+    {
+      "id": "click-view",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "View"
+      }
+    },
+    {
+      "id": "wait-for-member-information",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "heading",
+          "name": "Member Information"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "heading",
+        "name": "Member Information"
+      }
+    },
+    {
+      "id": "extract-savings-accounts",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "output_present",
+        "output": "savingsAccounts"
+      },
+      "action": "extract_many",
+      "target": {
+        "role": "row",
+        "name": "Savings"
+      },
+      "output": "savingsAccounts",
+      "fields": [
+        "maskedAccountNumber",
+        "availableBalance",
+        "status"
+      ],
+      "pattern": "^Savings\\s+(\\*{4}\\d{4})\\s+(\\$[\\d,]+\\.\\d{2})\\s+(\\w+)\\s+View$"
+    }
+  ],
+  "checkpoint": {
+    "type": "all",
+    "conditions": [
+      {
+        "kind": "visible",
+        "target": {
+          "role": "row",
+          "name": "Savings"
+        }
+      },
+      {
+        "kind": "output_present",
+        "output": "savingsAccounts"
+      }
+    ]
+  },
+  "policy": {
+    "allowedActions": [
+      "navigate",
+      "click",
+      "wait_for",
+      "type",
+      "extract_many"
+    ],
+    "riskLevel": "safe"
+  },
+  "metadata": {
+    "createdAt": "2026-09-16T13:06:35.635Z",
+    "sourceRunId": "28bb96b9-9b0d-4e1d-9f5d-91d3dd2a6abe"
+  }
+}

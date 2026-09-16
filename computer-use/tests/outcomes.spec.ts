@@ -33,6 +33,7 @@ function actions(): ReplayBrowserActions & { waits: number } {
     async click() { return { success: true, action: "click" }; },
     async fill() { return { success: true, action: "fill" }; },
     async readText() { return { success: true, action: "readText", data: "" }; },
+    async readTexts() { return { success: true, action: "readTexts", data: [] }; },
     async waitFor() { return { success: true, action: "waitFor" }; },
     async isVisible() { return { success: true, action: "isVisible", data: true }; },
     async wait(): Promise<ActionResult> {
@@ -112,14 +113,31 @@ test("waits once for a temporary loading state and then continues", async () => 
   expect(observer.calls).toBe(2);
 });
 
-test("returns TIMEOUT when loading remains transient after the bounded retry", async () => {
+test("waits through a bounded slow response until the application settles", async () => {
+  const browserActions = actions();
+  const detector = new OutcomeDetector(
+    new SequenceObserver([
+      observation("Searching..."),
+      observation("Searching..."),
+      observation("Searching..."),
+      observation("Search Results John Smith View"),
+    ]),
+    browserActions,
+    { transientRetries: 3, retryDelayMs: 1 },
+  );
+
+  await expect(detector.detect(3)).resolves.toEqual({ status: "normal" });
+  expect(browserActions.waits).toBe(3);
+});
+
+test("returns TIMEOUT when loading remains transient through the bounded retries", async () => {
   const detector = new OutcomeDetector(
     new SequenceObserver([observation("Searching...")]),
     actions(),
-    { retryDelayMs: 1 },
+    { transientRetries: 1, retryDelayMs: 1 },
   );
 
-  await expect(detector.detect()).resolves.toMatchObject({ status: "failure", code: "TIMEOUT" });
+  await expect(detector.detect(1)).resolves.toMatchObject({ status: "failure", code: "TIMEOUT" });
 });
 
 test("maps an unknown application error to UNEXPECTED_STATE", async () => {

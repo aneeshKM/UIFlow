@@ -1,0 +1,28 @@
+{
+  "runId": "d7be1f2b-b691-4e45-a2cb-93fe18b0c8ae",
+  "artifact": {
+    "id": "get-member-savings-accounts",
+    "version": 1
+  },
+  "inputNames": [
+    "memberId"
+  ],
+  "status": "business_outcome",
+  "completedSteps": 7,
+  "outputs": {},
+  "durationMs": 1431,
+  "interventions": 0,
+  "evidence": {
+    "json": "evidence/replay/2026-09-16_13-08-52__d7be1f2b/replay_d7be1f2b.json",
+    "screenshot": "evidence/replay/2026-09-16_13-08-52__d7be1f2b/replay_d7be1f2b.png",
+    "trace": "evidence/replay/2026-09-16_13-08-52__d7be1f2b/replay_d7be1f2b-trace.zip"
+  },
+  "businessOutcome": {
+    "code": "NO_ACCOUNTS_FOUND",
+    "stepId": "click-view",
+    "details": {
+      "message": "No accounts found for member 23458",
+      "memberId": "23458"
+    }
+  }
+}

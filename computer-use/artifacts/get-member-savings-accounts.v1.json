@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0",
   "capability": {
-    "id": "get-member-savings-balance",
-    "name": "Get Member Savings Balance",
-    "description": "check current savings balance for {{memberId}}",
+    "id": "get-member-savings-accounts",
+    "name": "Get Member Savings Accounts",
+    "description": "Look up member {{memberId}} and return every Savings account with its masked account number, available balance as a currency string including the dollar sign, and status.",
     "version": 1
   },
   "target": {
@@ -20,8 +20,22 @@
   ],
   "outputs": [
     {
-      "name": "savingsBalance",
-      "type": "string"
+      "name": "savingsAccounts",
+      "type": "record_list",
+      "fields": [
+        {
+          "name": "maskedAccountNumber",
+          "type": "string"
+        },
+        {
+          "name": "availableBalance",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ]
     }
   ],
   "steps": [
@@ -47,6 +61,22 @@
       "target": {
         "role": "link",
         "name": "Members"
+      }
+    },
+    {
+      "id": "wait-for-member-search",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "heading",
+          "name": "Member Search"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "heading",
+        "name": "Member Search"
       }
     },
     {
@@ -105,19 +135,40 @@
       }
     },
     {
-      "id": "extract-savings-balance",
+      "id": "wait-for-member-information",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "heading",
+          "name": "Member Information"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "heading",
+        "name": "Member Information"
+      }
+    },
+    {
+      "id": "extract-savings-accounts",
       "timeoutMs": 10000,
       "expected": {
         "kind": "output_present",
-        "output": "savingsBalance"
+        "output": "savingsAccounts"
       },
-      "action": "extract",
+      "action": "extract_many",
       "target": {
         "role": "row",
         "name": "Savings"
       },
-      "output": "savingsBalance",
-      "pattern": "\\$([\\d,]+\\.\\d{2})"
+      "output": "savingsAccounts",
+      "fields": [
+        "maskedAccountNumber",
+        "availableBalance",
+        "status"
+      ],
+      "pattern": "^Savings\\s+(\\*{4}\\d{4})\\s+(\\$[\\d,]+\\.\\d{2})\\s+(\\w+)\\s+View$"
     }
   ],
   "checkpoint": {
@@ -132,7 +183,7 @@
       },
       {
         "kind": "output_present",
-        "output": "savingsBalance"
+        "output": "savingsAccounts"
       }
     ]
   },
@@ -140,14 +191,14 @@
     "allowedActions": [
       "navigate",
       "click",
-      "type",
       "wait_for",
-      "extract"
+      "type",
+      "extract_many"
     ],
     "riskLevel": "safe"
   },
   "metadata": {
-    "createdAt": "2026-09-16T04:10:19.998Z",
-    "sourceRunId": "77008f59-c4be-4fb4-b03e-eb00ac407a0a"
+    "createdAt": "2026-09-16T13:06:35.635Z",
+    "sourceRunId": "28bb96b9-9b0d-4e1d-9f5d-91d3dd2a6abe"
   }
 }

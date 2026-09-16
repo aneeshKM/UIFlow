@@ -3,9 +3,9 @@ import type { AgentRole } from "../agent/types.js";
 export const CAPABILITY_SCHEMA_VERSION = "1.0.0" as const;
 
 export type InputType = "string";
-export type OutputType = "string";
+export type OutputType = "string" | "record_list";
 export type RiskLevel = "safe" | "review" | "blocked";
-export type CapabilityAction = "navigate" | "click" | "type" | "extract" | "wait_for" | "assert";
+export type CapabilityAction = "navigate" | "click" | "type" | "extract" | "extract_many" | "wait_for" | "assert";
 
 export interface InputDefinition {
   name: string;
@@ -17,6 +17,7 @@ export interface InputDefinition {
 export interface OutputDefinition {
   name: string;
   type: OutputType;
+  fields?: Array<{ name: string; type: "string" }>;
   description?: string;
 }
 
@@ -60,6 +61,13 @@ export type CapabilityStep =
       target: ArtifactTarget;
       output: string;
       pattern?: string;
+    })
+  | (StepBase & {
+      action: "extract_many";
+      target: ArtifactTarget;
+      output: string;
+      fields: string[];
+      pattern: string;
     })
   | (StepBase & { action: "wait_for"; target: ArtifactTarget })
   | (StepBase & { action: "assert"; condition: CheckpointCondition });

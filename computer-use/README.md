@@ -1,6 +1,6 @@
 # Computer Use capability system
 
-This TypeScript project discovers a browser workflow with an OpenAI model, compiles the successful run into a reusable capability artifact, and replays that artifact deterministically against the synthetic Northstar Credit Union app. The implemented capability looks up a member and returns the available balance of their savings account.
+This TypeScript project discovers a browser workflow with an OpenAI model, compiles the successful run into a reusable capability artifact, and replays that artifact deterministically against the synthetic Northstar Credit Union app. The implemented capability looks up a member and returns every Savings account as a structured record containing its masked account number, available balance, and status.
 
 The three durable records have separate purposes:
 
@@ -101,23 +101,23 @@ npm run typecheck
 npm test
 ```
 
-The suite uses a mocked model and consumes no API calls. Most tests are isolated; `tests/browser.spec.ts` is the live browser integration suite and checks that both demo services are available.
+The suite uses a mocked model and makes no OpenAI API calls. Most tests are isolated; `tests/browser.spec.ts` and `tests/replay-live.spec.ts` exercise the running demo services with a real browser.
 
 ## Run discovery and build an artifact
 
 ```bash
 npm run discover -- \
-  "Look up member 12345 and read their current savings balance"
+  "Look up member 23457 and return every Savings account with its masked account number, available balance as a currency string including the dollar sign, and status."
 ```
 
-The command establishes the simulated login in trusted code, waits for the operations dashboard, starts tracing, and lets the bounded model loop choose the application section from the goal. For each model-decided step, the CLI prints a short operational decision summary. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
+The command establishes the simulated login in trusted code, waits for the operations dashboard, starts tracing, and lets the bounded model loop choose the application section from the goal. For each model-decided step, the CLI prints a short operational decision summary. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. Build an artifact from the successful discovery path printed by the command:
 
 ```bash
 npm run artifact:build -- \
-  evidence/discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084.json
+  evidence/discovery/<run-folder>/discovery_<run-id>.json
 ```
 
-For a new discovery, replace that path with the run JSON path printed by `discover`. The builder parameterizes discovered inputs, excludes operational decision summaries and concrete outputs, creates semantic steps and checkpoints, and validates the final artifact before an atomic owner-only write. The checked-in example is `artifacts/get-member-savings-balance.v1.json`.
+The builder parameterizes discovered inputs, excludes operational decision summaries and concrete outputs, creates semantic steps and checkpoints, and validates the final artifact before an atomic owner-only write under `artifacts/`.
 
 ## Run deterministic replay
 
@@ -125,7 +125,7 @@ Success:
 
 ```bash
 npm run replay -- \
-  artifacts/get-member-savings-balance.v1.json \
+  artifacts/get-member-savings-accounts.v1.json \
   --memberId 12345
 ```
 
@@ -133,17 +133,33 @@ Known business outcome:
 
 ```bash
 npm run replay -- \
-  artifacts/get-member-savings-balance.v1.json \
+  artifacts/get-member-savings-accounts.v1.json \
   --memberId 99999
 ```
 
-The first command returns `success` and `savingsBalance: "$4,281.50"`. The second returns the valid business outcome `MEMBER_NOT_FOUND` with a successful process exit. Member `23458` similarly returns `NO_ACCOUNTS_FOUND`. During discovery, a completed account search that omits a specifically requested account can return `REQUESTED_ACCOUNT_NOT_FOUND` after the application outcome adapter validates the goal and observable results. Replay validates the artifact and runtime inputs, applies policy before every step, retries a recoverable locator failure once, detects known application states, and evaluates the final checkpoint.
+Empty-account business outcome:
+
+```bash
+npm run replay -- \
+  artifacts/get-member-savings-accounts.v1.json \
+  --memberId 23458
+```
+
+The first command returns `success` with one item in `savingsAccounts`. Member `23457` demonstrates the collection contract and returns both `****5005` and `****5006` in DOM order. The second command returns `MEMBER_NOT_FOUND`, and the third returns `NO_ACCOUNTS_FOUND`; both are valid business outcomes with successful process exits. During discovery, a completed account search that omits a specifically requested account can return `REQUESTED_ACCOUNT_NOT_FOUND` after the application outcome adapter validates the goal and observable results. Replay validates the artifact and runtime inputs, applies policy before every step, uses one bounded timeout budget across retries, waits through transient application states, reconciles late business outcomes before returning locator failures, extracts every matching row, and evaluates the final checkpoint.
+
+Multiple Savings accounts:
+
+```bash
+npm run replay -- \
+  artifacts/get-member-savings-accounts.v1.json \
+  --memberId 23457
+```
 
 To prove that replay is model-independent:
 
 ```bash
 OPENAI_API_KEY=invalid npm run replay -- \
-  artifacts/get-member-savings-balance.v1.json \
+  artifacts/get-member-savings-accounts.v1.json \
   --memberId 12345
 ```
 
@@ -151,7 +167,7 @@ OPENAI_API_KEY=invalid npm run replay -- \
 
 ```bash
 npm run replay -- \
-  artifacts/get-member-savings-balance.v1.json \
+  artifacts/get-member-savings-accounts.v1.json \
   --memberId 12345 \
   --headed \
   --demo-failure click-search
@@ -177,11 +193,11 @@ Discovery does not request or persist private model chain-of-thought. It may sto
 
 Terminal run states distinguish successful requested output, an expected `business_outcome`, and a hard `failure`. Recoverable loading, locator, and model conditions are retried or escalated rather than mislabeled as business outcomes. After receiving a settled observation, the model may return `REQUESTED_ACCOUNT_NOT_FOUND`; the runtime validates the structured decision and policy, records the observation and outcome, and does not independently reinterpret the application's business semantics. The outcome describes the UI state observed at the evidence timestamp, not a transactional guarantee that the underlying state cannot change later.
 
-The small checked-in review set is indexed in [evidence/README.md](evidence/README.md). New run folders remain ignored so routine demos do not pollute the repository.
+The deliberately selected review set is indexed in [evidence/README.md](evidence/README.md). New run folders remain ignored until they are reviewed and explicitly added to the canonical set.
 
 ## Safety
 
-- The action schema exposes only observe/read, click, type, wait, allowed navigation, finish, structured business-outcome, and fail semantics. It exposes no JavaScript, shell, upload, download, or arbitrary Playwright execution.
+- The action schema exposes only observe/read, structured multi-row read, click, type, wait, allowed navigation, finish, structured business-outcome, and fail semantics. It exposes no JavaScript, shell, upload, download, or arbitrary Playwright execution.
 - `ActionPolicy` is the single authority for allowed actions, origins, route prefixes, and risk. Requested navigation is checked before execution and the resulting URL is checked after navigation or redirects.
 - Safe actions execute automatically. State-changing actions return `POLICY_REQUIRES_HUMAN`. Irreversible actions return `POLICY_BLOCKED` for automation and humans.
 - Discovery, replay, setup actions, observation, screenshots, and the operator console all pass through the policy-bound browser layer. `SessionControl` prevents concurrent human and automation ownership.

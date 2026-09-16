@@ -8,13 +8,14 @@ import type {
   PolicyTarget,
 } from "./types.js";
 
-const TARGET_ACTIONS = new Set(["click", "type", "read"]);
+const TARGET_ACTIONS = new Set(["click", "type", "read", "read_many"]);
 const ALLOWED_ACTIONS = new Set<PolicyAction>([
   "observe",
   "navigate",
   "click",
   "type",
   "read",
+  "read_many",
   "wait",
   "finish",
   "business_outcome",
@@ -94,8 +95,9 @@ export class ActionPolicy {
         }
         break;
       case "read":
+      case "read_many":
         if (decision.outputName === undefined || !OUTPUT_NAME.test(decision.outputName)) {
-          throw new PolicyViolation("Read requires a stable camelCase outputName.");
+          throw new PolicyViolation(`${decision.action} requires a stable camelCase outputName.`);
         }
         if (decision.extractionPattern !== undefined) {
           if (decision.extractionPattern.length > MAX_EXTRACTION_PATTERN_LENGTH) {
@@ -105,6 +107,18 @@ export class ActionPolicy {
             new RegExp(decision.extractionPattern);
           } catch {
             throw new PolicyViolation("Read extractionPattern must be a valid regular expression.");
+          }
+        }
+        if (decision.action === "read_many") {
+          if (decision.outputFields === undefined || decision.outputFields.length === 0) {
+            throw new PolicyViolation("read_many requires at least one stable output field.");
+          }
+          if (new Set(decision.outputFields).size !== decision.outputFields.length
+            || decision.outputFields.some((field) => !OUTPUT_NAME.test(field))) {
+            throw new PolicyViolation("read_many outputFields must be unique stable camelCase names.");
+          }
+          if (decision.extractionPattern === undefined) {
+            throw new PolicyViolation("read_many requires an extractionPattern with one capture group per output field.");
           }
         }
         break;

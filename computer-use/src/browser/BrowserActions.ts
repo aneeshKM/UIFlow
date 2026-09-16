@@ -117,6 +117,14 @@ export class BrowserActions {
     return this.run("readText", "read", () => this.locator(target).innerText({ timeout: timeoutMs }), target, owner);
   }
 
+  readTexts(target: LocatorSpec, timeoutMs?: number, owner: ControlOwner = "AUTOMATION"): Promise<ActionResult<string[]>> {
+    return this.run("readTexts", "read", async () => {
+      const locator = this.locator(target);
+      await locator.first().waitFor({ state: "visible", timeout: timeoutMs });
+      return locator.allInnerTexts();
+    }, target, owner);
+  }
+
   getValue(target: LocatorSpec, owner: ControlOwner = "AUTOMATION"): Promise<ActionResult<string>> {
     return this.run("getValue", "read", () => this.locator(target).inputValue(), target, owner);
   }
@@ -133,7 +141,7 @@ export class BrowserActions {
   }
 
   isVisible(target: LocatorSpec, timeoutMs?: number, owner: ControlOwner = "AUTOMATION"): Promise<ActionResult<boolean>> {
-    return this.run("isVisible", "read", () => this.locator(target).isVisible({ timeout: timeoutMs }), target, owner);
+    return this.run("isVisible", "read", () => this.locator(target).first().isVisible({ timeout: timeoutMs }), target, owner);
   }
 
   waitFor(target: LocatorSpec, state: WaitState = "visible", timeoutMs?: number, owner: ControlOwner = "AUTOMATION"): Promise<ActionResult> {

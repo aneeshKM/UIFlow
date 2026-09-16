@@ -61,6 +61,7 @@ export class StepExecutor {
     outputs: RuntimeOutputs,
     baseUrl: string,
   ): Promise<StepExecutionResult> {
+    const deadline = performance.now() + step.timeoutMs;
     try {
       let result: StepExecutionResult;
       switch (step.action) {
@@ -73,7 +74,8 @@ export class StepExecutor {
             return this.failure(step.id, "ACTION_FAILED", `Navigation value is not a valid URL: ${value}`, value);
           }
           this.policy.assertAllowed({ action: "navigate", destination: url });
-          result = await this.executeAction(step, undefined, (timeoutMs) => this.actions.navigate(url, timeoutMs));
+          result = await this.executeAction(step, undefined, deadline, (timeoutMs) =>
+            this.actions.navigate(url, timeoutMs));
           if (result.status === "success") {
             const actualUrl = (await this.observer.observe()).url;
             this.policy.assertUrlAllowed(actualUrl);
@@ -82,19 +84,19 @@ export class StepExecutor {
         }
         case "click":
           this.policy.assertAllowed({ action: "click", target: step.target });
-          result = await this.executeTargetAction(step, step.target, (target, timeoutMs) =>
+          result = await this.executeTargetAction(step, step.target, deadline, (target, timeoutMs) =>
             this.actions.click(target, timeoutMs));
           break;
         case "type": {
           this.policy.assertAllowed({ action: "type", target: step.target });
           const value = this.inputResolver.resolve(step.value, inputs, this.inputDefinitions);
-          result = await this.executeTargetAction(step, step.target, (target, timeoutMs) =>
+          result = await this.executeTargetAction(step, step.target, deadline, (target, timeoutMs) =>
             this.actions.fill(target, value, timeoutMs));
           break;
         }
         case "extract": {
           this.policy.assertAllowed({ action: "read", target: step.target });
-          const extraction = await this.executeTargetAction<string>(step, step.target, (target, timeoutMs) =>
+          const extraction = await this.executeTargetAction<string>(step, step.target, deadline, (target, timeoutMs) =>
             this.actions.readText(target, timeoutMs));
           if (extraction.status === "failure") return extraction;
           const text = extraction.data;
@@ -127,14 +129,57 @@ export class StepExecutor {
           result = { status: "success", output: { name: step.output, value: extracted } };
           break;
         }
+        case "extract_many": {
+          this.policy.assertAllowed({ action: "read", target: step.target });
+          const extraction = await this.executeTargetAction<string[]>(step, step.target, deadline, (target, timeoutMs) =>
+            this.actions.readTexts(target, timeoutMs));
+          if (extraction.status === "failure") return extraction;
+          const records: Array<Record<string, string>> = [];
+          for (const text of extraction.data) {
+            let match: RegExpMatchArray | null;
+            try {
+              match = text.match(new RegExp(step.pattern));
+            } catch (error) {
+              return this.failure(
+                step.id,
+                "ACTION_FAILED",
+                `Extraction pattern is invalid: ${error instanceof Error ? error.message : String(error)}`,
+                step.pattern,
+                text,
+              );
+            }
+            if (match === null || step.fields.some((_field, index) => match![index + 1] === undefined)) {
+              return this.failure(
+                step.id,
+                "ACTION_FAILED",
+                `A matched row did not provide every declared field for output "${step.output}".`,
+                { pattern: step.pattern, fields: step.fields },
+                text,
+              );
+            }
+            records.push(Object.fromEntries(step.fields.map((field, index) => [field, match![index + 1]!])));
+          }
+          if (records.length === 0) {
+            return this.failure(
+              step.id,
+              "ACTION_FAILED",
+              `No rows were extracted for output "${step.output}".`,
+              step.target,
+              [],
+            );
+          }
+          outputs[step.output] = records;
+          result = { status: "success", output: { name: step.output, value: records } };
+          break;
+        }
         case "wait_for":
           this.policy.assertAllowed({ action: "wait", target: step.target });
-          result = await this.executeTargetAction(step, step.target, (target, timeoutMs) =>
+          result = await this.executeTargetAction(step, step.target, deadline, (target, timeoutMs) =>
             this.actions.waitFor(target, "visible", timeoutMs));
           break;
         case "assert": {
           this.policy.assertAllowed({ action: "observe" });
-          const assertion = await this.evaluateCondition(step.condition, outputs, step.timeoutMs);
+          const assertion = await this.evaluateCondition(step.condition, outputs, this.remainingTime(deadline));
           if (!assertion.success) {
             return this.failure(step.id, "ACTION_FAILED", assertion.message, step.condition, assertion.observed);
           }
@@ -145,7 +190,7 @@ export class StepExecutor {
 
       if (result.status === "failure") return result;
       if (step.expected.kind !== "action_succeeds") {
-        const expected = await this.evaluateCondition(step.expected, outputs, step.timeoutMs);
+        const expected = await this.evaluateCondition(step.expected, outputs, this.remainingTime(deadline));
         if (!expected.success) {
           return this.failure(step.id, "ACTION_FAILED", expected.message, step.expected, expected.observed);
         }
@@ -173,12 +218,15 @@ export class StepExecutor {
   private async executeAction(
     step: CapabilityStep,
     expected: unknown,
+    deadline: number,
     operation: (timeoutMs: number) => Promise<ActionResult>,
   ): Promise<StepExecutionResult> {
-    let actionResult = await operation(step.timeoutMs);
+    let actionResult = await operation(Math.max(1, this.remainingTime(deadline)));
     if (!actionResult.success && this.isRecoverable(actionResult)) {
+      if (this.remainingTime(deadline) === 0) return this.actionFailure(step.id, actionResult, expected);
       await this.refreshObservation();
-      actionResult = await operation(step.timeoutMs);
+      if (this.remainingTime(deadline) === 0) return this.actionFailure(step.id, actionResult, expected);
+      actionResult = await operation(Math.max(1, this.remainingTime(deadline)));
     }
     if (actionResult.success) return { status: "success" };
     return this.actionFailure(step.id, actionResult, expected);
@@ -187,6 +235,7 @@ export class StepExecutor {
   private async executeTargetAction<T = undefined>(
     step: CapabilityStep,
     target: ArtifactTarget,
+    deadline: number,
     operation: (target: LocatorSpec, timeoutMs: number) => Promise<ActionResult<T>>,
   ): Promise<({ status: "success"; data: T } | ReplayFailure)> {
     let lastResult: ActionResult<T> | undefined;
@@ -194,14 +243,23 @@ export class StepExecutor {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       for (const candidate of candidates) {
-        lastResult = await operation(candidate, step.timeoutMs);
+        const remainingMs = this.remainingTime(deadline);
+        if (remainingMs === 0) break;
+        lastResult = await operation(candidate, remainingMs);
         if (lastResult.success) return { status: "success", data: lastResult.data as T };
         if (!this.isRecoverable(lastResult)) return this.actionFailure(step.id, lastResult, target);
       }
-      if (attempt === 0) await this.refreshObservation();
+      if (attempt === 0 && this.remainingTime(deadline) > 0) await this.refreshObservation();
     }
 
+    if (lastResult === undefined) {
+      return this.failure(step.id, "TIMEOUT", "The step timeout expired before the browser action completed.", target);
+    }
     return this.actionFailure(step.id, lastResult!, target);
+  }
+
+  private remainingTime(deadline: number): number {
+    return Math.max(0, Math.ceil(deadline - performance.now()));
   }
 
   private async refreshObservation(): Promise<void> {

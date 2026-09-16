@@ -74,6 +74,7 @@ export interface ReplayBrowserActions {
   click(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult>;
   fill(target: LocatorSpec, value: string, timeoutMs?: number): Promise<ActionResult>;
   readText(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult<string>>;
+  readTexts(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult<string[]>>;
   waitFor(target: LocatorSpec, state?: "visible" | "hidden" | "attached", timeoutMs?: number): Promise<ActionResult>;
   isVisible(target: LocatorSpec, timeoutMs?: number): Promise<ActionResult<boolean>>;
   wait(durationMs?: number): Promise<ActionResult>;
@@ -104,7 +105,7 @@ export interface ReplayCheckpointEvaluator {
 }
 
 export interface ReplayOutcomeDetector {
-  detect(): Promise<OutcomeDetectionResult>;
+  detect(timeoutMs?: number): Promise<OutcomeDetectionResult>;
 }
 
 export type ReplayInterventionHandler = InterventionHandler;

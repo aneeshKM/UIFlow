@@ -1,16 +1,16 @@
 # Canonical evidence
 
-This directory keeps one deliberate review set. Each run has a UTC-named folder in `discovery/` or `replay/`: `YYYY-MM-DD_HH-mm-ss__<first-eight-run-id-characters>`. JSON keeps full run and intervention UUIDs. Routine local run folders are ignored.
+This directory contains one deliberately reviewed end-to-end evidence set. Each run uses a UTC-named folder under `discovery/` or `replay/`: `YYYY-MM-DD_HH-mm-ss__<short-run-id>`.
 
-| Scenario | Files | Expected result |
+| Scenario | Files | Verified result |
 | --- | --- | --- |
-| Discovery success | `discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084.json`, `.png`, `-trace.zip` | Model discovers the parameterized savings-balance workflow. |
-| Replay success | `replay/2026-09-16_02-32-08__baf38893/replay_baf38893.json`, `.png`, `-trace.zip` | `success`, six completed steps, `$4,281.50`. |
-| Known business outcome | `replay/2026-09-16_02-32-08__8da22f9f/replay_8da22f9f.json`, `.png`, `-trace.zip` | `business_outcome: MEMBER_NOT_FOUND`. |
-| Human escalation | `replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/intervention.json`, `before.png`, `after.png` | Same-session operator completes the forced Search action and returns control. |
+| Genuine LLM discovery | `discovery/2026-09-16_13-04-11__28bb96b9/` | The model selects `read_many` and returns both Savings records for member `23457`; a model-timeout intervention is also preserved. |
+| Exact generated artifact | `artifacts/get-member-savings-accounts.v1.json` | `metadata.sourceRunId` equals discovery run `28bb96b9-9b0d-4e1d-9f5d-91d3dd2a6abe`. |
+| One-account replay success | `replay/2026-09-16_13-08-47__a39bf8fc/` | Nine deterministic steps return the single Savings record for member `12345`. |
+| Multi-account replay success | `replay/2026-09-16_13-08-49__6f791177/` | Member `23457` returns both Savings records, `****5005` and `****5006`, in order. |
+| Missing-member business outcome | `replay/2026-09-16_13-08-51__fa81ad15/` | `business_outcome: MEMBER_NOT_FOUND` at `click-search`. |
+| Empty-account business outcome | `replay/2026-09-16_13-08-52__d7be1f2b/` | Member `23458` returns `business_outcome: NO_ACCOUNTS_FOUND` at `click-view`. |
+| Injected hard failure | `replay/2026-09-16_13-08-54__6906706d/` | `failure: LOCATOR_NOT_FOUND` includes step, expected target, screenshot, and trace. |
+| Human handoff and resume | `replay/2026-09-16_13-09-19__9222b992/` | The operator uses the same session, completes Search, returns control, and all nine replay steps succeed with one intervention. |
 
-The discovery sample used its `startedAt` timestamp. The replay samples do not record `startedAt`, so their migrated folder timestamps use the original evidence commit time. The intervention-only review sample used its `createdAt` timestamp; its parent replay record was not part of the original review set. New runs use their actual run start time for the folder name.
-
-Replay and discovery interventions are written under the parent run's `interventions/<short-intervention-id>/` directory. Existing external flat evidence should be moved or archived manually if it must be retained; the new writer does not auto-migrate historical files.
-
-All data belongs to the synthetic Northstar application. JSON evidence is sanitized before persistence. Screenshots and traces are binary review artifacts and require stricter controls if the system is connected to real customer data.
+The artifact under `evidence/artifacts/` is byte-for-byte identical to the callable artifact under `artifacts/`. JSON evidence is sanitized before persistence. Screenshots and traces contain only synthetic demo data and require deployment-specific retention, encryption, access control, and redaction for real customer data.

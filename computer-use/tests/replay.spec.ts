@@ -20,8 +20,10 @@ import type {
 class StubActions implements ReplayBrowserActions {
   readonly calls: Array<{ action: string; target?: LocatorSpec; value?: string; url?: string }> = [];
   readValue = "Savings ****4521 $4,281.50 Open View";
+  readValues = [this.readValue];
   visible = true;
   clickFailures = 0;
+  clickFailureTargetName: string | undefined;
 
   async navigate(url: string): Promise<ActionResult> {
     this.calls.push({ action: "navigate", url });
@@ -30,7 +32,9 @@ class StubActions implements ReplayBrowserActions {
 
   async click(target: LocatorSpec): Promise<ActionResult> {
     this.calls.push({ action: "click", target });
-    if (this.clickFailures > 0) {
+    const targetName = target.strategy === "role" ? target.name : undefined;
+    if (this.clickFailures > 0
+      && (this.clickFailureTargetName === undefined || targetName === this.clickFailureTargetName)) {
       this.clickFailures -= 1;
       return {
         success: false,
@@ -49,6 +53,11 @@ class StubActions implements ReplayBrowserActions {
   async readText(target: LocatorSpec): Promise<ActionResult<string>> {
     this.calls.push({ action: "readText", target });
     return { success: true, action: "readText", data: this.readValue };
+  }
+
+  async readTexts(target: LocatorSpec): Promise<ActionResult<string[]>> {
+    this.calls.push({ action: "readTexts", target });
+    return { success: true, action: "readTexts", data: this.readValues };
   }
 
   async waitFor(target: LocatorSpec): Promise<ActionResult> {
@@ -70,7 +79,7 @@ class StubActions implements ReplayBrowserActions {
 class StubObserver implements ReplaySurfaceObserver {
   observations = 0;
 
-  constructor(private readonly url = "http://localhost:5174/members/12345") {}
+  constructor(private readonly url = "http://localhost:5174/dashboard") {}
 
   async observe(): Promise<SurfaceObservation> {
     this.observations += 1;
@@ -91,7 +100,92 @@ const normalOutcome: ReplayOutcomeDetector = {
 };
 
 async function artifact(): Promise<CapabilityArtifact> {
-  return JSON.parse(await readFile(join(process.cwd(), "artifacts", "get-member-savings-balance.v1.json"), "utf8"));
+  return structuredClone({
+    schemaVersion: "1.0.0",
+    capability: {
+      id: "get-member-savings-balance",
+      name: "Get Member Savings Balance",
+      description: "Look up member {{memberId}} and read their current savings balance.",
+      version: 1,
+    },
+    target: { app: "bank-app", baseUrl: "http://localhost:5174" },
+    inputs: [{
+      name: "memberId",
+      type: "string",
+      required: true,
+      description: "Value for textbox Member Number.",
+    }],
+    outputs: [{ name: "savingsBalance", type: "string" }],
+    steps: [
+      {
+        id: "navigate-dashboard",
+        action: "navigate",
+        value: { literal: "/dashboard" },
+        timeoutMs: 10_000,
+        expected: { kind: "url_matches", value: "/dashboard" },
+      },
+      {
+        id: "click-members",
+        action: "click",
+        target: { role: "link", name: "Members" },
+        timeoutMs: 10_000,
+        expected: { kind: "action_succeeds" },
+      },
+      {
+        id: "type-member-number",
+        action: "type",
+        target: { role: "textbox", name: "Member Number" },
+        value: { input: "memberId" },
+        timeoutMs: 10_000,
+        expected: { kind: "action_succeeds" },
+      },
+      {
+        id: "click-search",
+        action: "click",
+        target: { role: "button", name: "Search" },
+        timeoutMs: 10_000,
+        expected: { kind: "action_succeeds" },
+      },
+      {
+        id: "wait-for-view",
+        action: "wait_for",
+        target: { role: "link", name: "View" },
+        timeoutMs: 10_000,
+        expected: { kind: "visible", target: { role: "link", name: "View" } },
+      },
+      {
+        id: "click-view",
+        action: "click",
+        target: { role: "link", name: "View" },
+        timeoutMs: 10_000,
+        expected: { kind: "action_succeeds" },
+      },
+      {
+        id: "extract-savings-balance",
+        action: "extract",
+        target: { role: "row", name: "Savings" },
+        output: "savingsBalance",
+        pattern: "(\\$-?[\\d,]+\\.\\d{2})",
+        timeoutMs: 10_000,
+        expected: { kind: "output_present", output: "savingsBalance" },
+      },
+    ],
+    checkpoint: {
+      type: "all",
+      conditions: [
+        { kind: "visible", target: { role: "row", name: "Savings" } },
+        { kind: "output_present", output: "savingsBalance" },
+      ],
+    },
+    policy: {
+      allowedActions: ["navigate", "click", "type", "wait_for", "extract"],
+      riskLevel: "safe",
+    },
+    metadata: {
+      createdAt: "2026-09-15T12:00:00.000Z",
+      sourceRunId: "fixture-run",
+    },
+  } satisfies CapabilityArtifact);
 }
 
 function createEngine(
@@ -127,7 +221,7 @@ test("executes artifact steps in order and injects the runtime memberId", async 
   expect(result.status).toBe("success");
   expect(actions.calls.filter(({ action }) =>
     ["navigate", "fill", "click", "waitFor", "readText"].includes(action)).map(({ action }) => action))
-    .toEqual(["navigate", "fill", "click", "waitFor", "click", "readText"]);
+    .toEqual(["navigate", "click", "fill", "click", "waitFor", "click", "readText"]);
   expect(actions.calls).toContainEqual(expect.objectContaining({
     action: "fill",
     value: "12345",
@@ -147,15 +241,65 @@ test("stores extracted output and returns success only after the checkpoint pass
     capabilityVersion: 1,
     runId: "replay-test",
     outputs: { savingsBalance: "$4,281.50" },
-    completedSteps: 6,
+    completedSteps: 7,
     durationMs: 0,
   });
 });
 
-test("stops replay with NO_ACCOUNTS_FOUND before attempting extraction", async () => {
+test("extract_many returns every matching row as an ordered record list", async () => {
   const capability = await artifact();
+  capability.outputs = [{
+    name: "savingsAccounts",
+    type: "record_list",
+    fields: [
+      { name: "accountNumber", type: "string" },
+      { name: "availableBalance", type: "string" },
+      { name: "status", type: "string" },
+    ],
+  }];
+  const extractionIndex = capability.steps.findIndex((step) => step.action === "extract");
+  capability.steps[extractionIndex] = {
+    id: "extract-savings-accounts",
+    action: "extract_many",
+    target: { role: "row", name: "Savings" },
+    output: "savingsAccounts",
+    fields: ["accountNumber", "availableBalance", "status"],
+    pattern: "Savings\\s+(\\*{4}\\d{4})\\s+(\\$-?[\\d,]+\\.\\d{2})\\s+(\\S+)",
+    timeoutMs: 10_000,
+    expected: { kind: "output_present", output: "savingsAccounts" },
+  };
+  capability.checkpoint.conditions = [
+    { kind: "visible", target: { role: "row", name: "Savings" } },
+    { kind: "output_present", output: "savingsAccounts" },
+  ];
+  capability.policy.allowedActions = ["navigate", "click", "type", "wait_for", "extract_many"];
+  const actions = new StubActions();
+  actions.readValues = [
+    "Savings ****5005 $0.00 Open View",
+    "Savings ****5006 $1,000.00 Open View",
+  ];
+  const { engine } = createEngine(capability, actions);
+
+  const result = await engine.run(capability, { memberId: "23457" });
+
+  expect(result).toMatchObject({
+    status: "success",
+    outputs: {
+      savingsAccounts: [
+        { accountNumber: "****5005", availableBalance: "$0.00", status: "Open" },
+        { accountNumber: "****5006", availableBalance: "$1,000.00", status: "Open" },
+      ],
+    },
+  });
+});
+
+test("stops replay with NO_ACCOUNTS_FOUND after opening member details and before extraction", async () => {
+  const capability = await artifact();
+  let detections = 0;
   const noAccounts: ReplayOutcomeDetector = {
     async detect() {
+      detections += 1;
+      if (detections < 6) return { status: "normal" };
       return {
         status: "business_outcome",
         code: "NO_ACCOUNTS_FOUND",
@@ -172,9 +316,54 @@ test("stops replay with NO_ACCOUNTS_FOUND before attempting extraction", async (
   expect(result).toMatchObject({
     status: "business_outcome",
     code: "NO_ACCOUNTS_FOUND",
-    stepId: "navigate-members",
+    stepId: "click-view",
   });
-  expect(replay.actions.calls.map(({ action }) => action)).toEqual(["navigate"]);
+  expect(replay.actions.calls.map(({ action }) => action)).toEqual([
+    "navigate",
+    "click",
+    "fill",
+    "click",
+    "waitFor",
+    "isVisible",
+    "click",
+  ]);
+});
+
+test("reconciles a missing extraction target with a settled business outcome", async () => {
+  const capability = await artifact();
+  let detections = 0;
+  const stepExecutor: ReplayStepExecutor = {
+    async execute(step) {
+      if (step.action !== "extract") return { status: "success" };
+      return {
+        status: "failure",
+        code: "LOCATOR_NOT_FOUND",
+        stepId: step.id,
+        message: "Savings row was not found.",
+      };
+    },
+  };
+  const outcomeDetector: ReplayOutcomeDetector = {
+    async detect() {
+      detections += 1;
+      if (detections < 7) return { status: "normal" };
+      return {
+        status: "business_outcome",
+        code: "NO_ACCOUNTS_FOUND",
+        details: { memberId: "23458" },
+      };
+    },
+  };
+  const { engine } = createEngine(capability, new StubActions(), new StubObserver(), {
+    stepExecutor,
+    outcomeDetector,
+  });
+
+  await expect(engine.run(capability, { memberId: "23458" })).resolves.toMatchObject({
+    status: "business_outcome",
+    code: "NO_ACCOUNTS_FOUND",
+    stepId: "extract-savings-balance",
+  });
 });
 
 test("rejects missing and unknown runtime inputs before browser execution", async () => {
@@ -216,7 +405,7 @@ test("blocks artifact navigation to an external origin", async () => {
   await expect(replay.engine.run(external, { memberId: "12345" })).resolves.toMatchObject({
     status: "failure",
     code: "POLICY_BLOCKED",
-    stepId: "navigate-members",
+    stepId: "navigate-dashboard",
     message: /outside http:\/\/localhost:5174 is blocked/,
   });
   expect(replay.actions.calls).toHaveLength(0);
@@ -230,10 +419,10 @@ test("stops replay when an allowed navigation redirects outside the origin", asy
   await expect(replay.engine.run(capability, { memberId: "12345" })).resolves.toMatchObject({
     status: "failure",
     code: "POLICY_BLOCKED",
-    stepId: "navigate-members",
+    stepId: "navigate-dashboard",
   });
   expect(replay.actions.calls).toEqual([
-    { action: "navigate", url: "http://localhost:5174/members" },
+    { action: "navigate", url: "http://localhost:5174/dashboard" },
   ]);
 });
 
@@ -288,6 +477,7 @@ test("refreshes once and returns LOCATOR_NOT_FOUND for a deterministic hard fail
   const capability = await artifact();
   const actions = new StubActions();
   actions.clickFailures = 2;
+  actions.clickFailureTargetName = "Search";
   const observer = new StubObserver();
   const { engine } = createEngine(capability, actions, observer);
 
@@ -299,7 +489,8 @@ test("refreshes once and returns LOCATOR_NOT_FOUND for a deterministic hard fail
     stepId: "click-search",
     expected: { role: "button", name: "Search" },
   });
-  expect(actions.calls.filter(({ action }) => action === "click")).toHaveLength(2);
+  expect(actions.calls.filter(({ action, target }) =>
+    action === "click" && target?.strategy === "role" && target.name === "Search")).toHaveLength(2);
   expect(observer.observations).toBeGreaterThan(0);
 });
 

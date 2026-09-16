@@ -42,8 +42,11 @@ function printStep(step: AgentStep): void {
     console.log(`Decision: ${step.decision.decisionSummary}`);
   }
   console.log(`Result: ${step.result?.success ? "success" : step.result?.error?.type ?? "not executed"}`);
-  if (step.decision?.action === "read" && step.result?.value !== undefined) {
-    console.log(`Value: ${step.result.value}`);
+  if ((step.decision?.action === "read" || step.decision?.action === "read_many")
+    && step.result?.value !== undefined) {
+    console.log(`Value: ${typeof step.result.value === "string"
+      ? step.result.value
+      : JSON.stringify(step.result.value)}`);
   }
 }
 

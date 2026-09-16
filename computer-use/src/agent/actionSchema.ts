@@ -46,6 +46,16 @@ const AgentOutputSchema = z.object({
   value: z.string(),
 }).strict();
 
+const AgentRecordSchema = z.object({
+  fields: z.array(AgentOutputSchema),
+}).strict();
+
+const AgentResultOutputSchema = z.object({
+  name: z.string(),
+  value: z.string().nullable(),
+  records: z.array(AgentRecordSchema),
+}).strict();
+
 const AgentBusinessOutcomeSchema = z.object({
   code: z.enum(BUSINESS_OUTCOME_CODES),
   details: z.array(AgentOutputSchema),
@@ -54,11 +64,12 @@ const AgentBusinessOutcomeSchema = z.object({
 // Structured Outputs requires every property to be required. Nullable fields
 // represent optional domain fields and are removed by parseAgentDecision().
 export const AgentDecisionSchema = z.object({
-  action: z.enum(["click", "type", "read", "navigate", "wait", "finish", "business_outcome", "fail"]),
+  action: z.enum(["click", "type", "read", "read_many", "navigate", "wait", "finish", "business_outcome", "fail"]),
   target: AgentTargetSchema.nullable(),
   value: z.string().nullable(),
   inputName: z.string().nullable(),
   outputName: z.string().nullable(),
+  outputFields: z.array(z.string()),
   extractionPattern: z.string().nullable(),
   decisionSummary: z.string()
     .min(1)
@@ -66,7 +77,7 @@ export const AgentDecisionSchema = z.object({
     .regex(/^[^\r\n]*\S[^\r\n]*$/, "decisionSummary must be a nonblank, single-line sentence.")
     .describe("One short operational sentence based only on the goal and observable UI that explains why the selected action is appropriate. Never include private chain-of-thought, speculation, credentials, secrets, tokens, or unnecessary PII."),
   businessOutcome: AgentBusinessOutcomeSchema.nullable(),
-  result: z.array(AgentOutputSchema).nullable(),
+  result: z.array(AgentResultOutputSchema).nullable(),
 }).strict();
 
 export type StructuredAgentDecision = z.infer<typeof AgentDecisionSchema>;
@@ -82,7 +93,10 @@ export function parseAgentDecision(input: unknown): AgentDecision {
       };
   const result = parsed.result === null
     ? undefined
-    : Object.fromEntries(parsed.result.map(({ name, value }) => [name, value]));
+    : Object.fromEntries(parsed.result.map(({ name, value, records }) => [
+        name,
+        value ?? records.map(({ fields }) => Object.fromEntries(fields.map((field) => [field.name, field.value]))),
+      ]));
   const businessOutcome = parsed.businessOutcome === null
     ? undefined
     : {
@@ -98,6 +112,7 @@ export function parseAgentDecision(input: unknown): AgentDecision {
     ...(parsed.value === null ? {} : { value: parsed.value }),
     ...(parsed.inputName === null ? {} : { inputName: parsed.inputName }),
     ...(parsed.outputName === null ? {} : { outputName: parsed.outputName }),
+    ...(parsed.outputFields.length === 0 ? {} : { outputFields: parsed.outputFields }),
     ...(parsed.extractionPattern === null ? {} : { extractionPattern: parsed.extractionPattern }),
     decisionSummary: sanitizeDecisionSummary(parsed.decisionSummary),
     ...(businessOutcome === undefined ? {} : { businessOutcome }),

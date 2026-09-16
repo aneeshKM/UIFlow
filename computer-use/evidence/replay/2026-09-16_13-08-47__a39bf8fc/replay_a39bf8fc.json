@@ -1,0 +1,28 @@
+{
+  "runId": "a39bf8fc-25af-4fe9-a8f1-fef7ebcd172e",
+  "artifact": {
+    "id": "get-member-savings-accounts",
+    "version": 1
+  },
+  "inputNames": [
+    "memberId"
+  ],
+  "status": "success",
+  "completedSteps": 9,
+  "outputs": {
+    "savingsAccounts": [
+      {
+        "maskedAccountNumber": "****4521",
+        "availableBalance": "$4,281.50",
+        "status": "Open"
+      }
+    ]
+  },
+  "durationMs": 1672,
+  "interventions": 0,
+  "evidence": {
+    "json": "evidence/replay/2026-09-16_13-08-47__a39bf8fc/replay_a39bf8fc.json",
+    "screenshot": "evidence/replay/2026-09-16_13-08-47__a39bf8fc/replay_a39bf8fc.png",
+    "trace": "evidence/replay/2026-09-16_13-08-47__a39bf8fc/replay_a39bf8fc-trace.zip"
+  }
+}

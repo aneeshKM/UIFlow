@@ -1,0 +1,29 @@
+{
+  "runId": "6906706d-8ade-40b1-ba45-573c1c88e5e9",
+  "artifact": {
+    "id": "get-member-savings-accounts",
+    "version": 1
+  },
+  "inputNames": [
+    "memberId"
+  ],
+  "status": "failure",
+  "completedSteps": 1,
+  "outputs": {},
+  "durationMs": 10787,
+  "interventions": 0,
+  "evidence": {
+    "json": "evidence/replay/2026-09-16_13-08-54__6906706d/replay_6906706d.json",
+    "screenshot": "evidence/replay/2026-09-16_13-08-54__6906706d/replay_6906706d.png",
+    "trace": "evidence/replay/2026-09-16_13-08-54__6906706d/replay_6906706d-trace.zip"
+  },
+  "failure": {
+    "code": "LOCATOR_NOT_FOUND",
+    "stepId": "click-members",
+    "expected": {
+      "role": "button",
+      "name": "__demo_missing_click-members__"
+    },
+    "message": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '__demo_missing_click-members__' })\u001b[22m\n"
+  }
+}

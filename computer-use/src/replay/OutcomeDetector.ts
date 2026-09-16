@@ -13,7 +13,7 @@ export interface OutcomeDetectorOptions {
 }
 
 export class OutcomeDetector {
-  private readonly transientRetries: number;
+  private readonly transientRetries?: number;
   private readonly retryDelayMs: number;
 
   constructor(
@@ -21,20 +21,32 @@ export class OutcomeDetector {
     private readonly actions: ReplayBrowserActions,
     options: OutcomeDetectorOptions = {},
   ) {
-    this.transientRetries = options.transientRetries ?? 1;
-    this.retryDelayMs = options.retryDelayMs ?? 500;
+    this.transientRetries = options.transientRetries;
+    this.retryDelayMs = options.retryDelayMs ?? 250;
+    if (this.transientRetries !== undefined
+      && (!Number.isInteger(this.transientRetries) || this.transientRetries < 0)) {
+      throw new Error("transientRetries must be a non-negative integer.");
+    }
+    if (!Number.isInteger(this.retryDelayMs) || this.retryDelayMs < 1 || this.retryDelayMs > 2_000) {
+      throw new Error("retryDelayMs must be an integer between 1 and 2000.");
+    }
   }
 
   classify(observation: SurfaceObservation): RuntimeState {
     return classifyApplicationState(observation);
   }
 
-  async detect(): Promise<OutcomeDetectionResult> {
+  async detect(timeoutMs = 10_000): Promise<OutcomeDetectionResult> {
     let observation = await this.observer.observe();
     let state = this.classify(observation);
+    const boundedTimeoutMs = Math.max(0, timeoutMs);
+    const retryLimit = this.transientRetries
+      ?? Math.ceil(boundedTimeoutMs / this.retryDelayMs);
 
-    for (let retry = 0; state.kind === "loading" && retry < this.transientRetries; retry += 1) {
-      const wait = await this.actions.wait(this.retryDelayMs);
+    for (let retry = 0; state.kind === "loading" && retry < retryLimit; retry += 1) {
+      const elapsedBudgetMs = retry * this.retryDelayMs;
+      const remainingMs = Math.max(0, boundedTimeoutMs - elapsedBudgetMs);
+      const wait = await this.actions.wait(Math.min(this.retryDelayMs, remainingMs));
       if (!wait.success) {
         return {
           status: "failure",
@@ -76,7 +88,7 @@ export class OutcomeDetector {
           code: "TIMEOUT",
           expected: "settled application state",
           observed: { url: observation.url, message: state.message },
-          message: "The application remained in a transient loading state after one retry.",
+          message: `The application remained in a transient loading state for ${boundedTimeoutMs}ms.`,
         };
     }
   }

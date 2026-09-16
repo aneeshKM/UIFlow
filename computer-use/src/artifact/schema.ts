@@ -69,6 +69,14 @@ export const CapabilityStepSchema = z.discriminatedUnion("action", [
     output: IdentifierSchema,
     pattern: z.string().min(1).max(200).optional(),
   }).strict(),
+  z.object({
+    ...StepBaseShape,
+    action: z.literal("extract_many"),
+    target: ArtifactTargetSchema,
+    output: IdentifierSchema,
+    fields: z.array(IdentifierSchema).min(1),
+    pattern: z.string().min(1).max(200),
+  }).strict(),
   z.object({ ...StepBaseShape, action: z.literal("wait_for"), target: ArtifactTargetSchema }).strict(),
   z.object({
     ...StepBaseShape,
@@ -95,18 +103,26 @@ export const CapabilityArtifactSchema = z.object({
     required: z.boolean(),
     description: z.string().trim().min(1).max(200).optional(),
   }).strict()),
-  outputs: z.array(z.object({
-    name: IdentifierSchema,
-    type: z.literal("string"),
-    description: z.string().trim().min(1).max(200).optional(),
-  }).strict()).min(1),
+  outputs: z.array(z.discriminatedUnion("type", [
+    z.object({
+      name: IdentifierSchema,
+      type: z.literal("string"),
+      description: z.string().trim().min(1).max(200).optional(),
+    }).strict(),
+    z.object({
+      name: IdentifierSchema,
+      type: z.literal("record_list"),
+      fields: z.array(z.object({ name: IdentifierSchema, type: z.literal("string") }).strict()).min(1),
+      description: z.string().trim().min(1).max(200).optional(),
+    }).strict(),
+  ])).min(1),
   steps: z.array(CapabilityStepSchema).min(1),
   checkpoint: z.object({
     type: z.enum(["all", "any"]),
     conditions: z.array(CheckpointConditionSchema).min(1),
   }).strict(),
   policy: z.object({
-    allowedActions: z.array(z.enum(["navigate", "click", "type", "extract", "wait_for", "assert"])).min(1),
+    allowedActions: z.array(z.enum(["navigate", "click", "type", "extract", "extract_many", "wait_for", "assert"])).min(1),
     riskLevel: z.enum(["safe", "review", "blocked"]),
   }).strict(),
   metadata: z.object({

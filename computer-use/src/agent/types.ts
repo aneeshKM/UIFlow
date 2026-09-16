@@ -8,6 +8,7 @@ export type AgentActionType =
   | "click"
   | "type"
   | "read"
+  | "read_many"
   | "navigate"
   | "wait"
   | "finish"
@@ -27,16 +28,21 @@ export interface AgentDecision {
   value?: string;
   inputName?: string;
   outputName?: string;
+  outputFields?: string[];
   extractionPattern?: string;
   decisionSummary: string;
   businessOutcome?: BusinessOutcome;
-  result?: Record<string, string>;
+  result?: AgentOutputs;
 }
+
+export type AgentRecord = Record<string, string>;
+export type AgentOutputValue = string | AgentRecord[];
+export type AgentOutputs = Record<string, AgentOutputValue>;
 
 export interface ActionExecutionResult {
   success: boolean;
   action: AgentActionType;
-  value?: string;
+  value?: AgentOutputValue;
   error?: {
     type: string;
     message: string;
@@ -64,7 +70,7 @@ export interface DiscoveryRun {
   completedAt?: string;
   status: AgentRunStatus;
   steps: AgentStep[];
-  outputs?: Record<string, string>;
+  outputs?: AgentOutputs;
   businessOutcome?: BusinessOutcome;
   stopReason?: string;
   evidence?: DiscoveryEvidencePaths;
@@ -78,7 +84,7 @@ export interface AgentDecisionContext {
   observation: SurfaceObservation;
   previousDecision?: AgentDecision;
   previousResult?: ActionExecutionResult;
-  extractedOutputs: Record<string, string>;
+  extractedOutputs: AgentOutputs;
   signal?: AbortSignal;
 }
 

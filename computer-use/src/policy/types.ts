@@ -8,6 +8,7 @@ export type PolicyAction =
   | "click"
   | "type"
   | "read"
+  | "read_many"
   | "wait"
   | "finish"
   | "business_outcome"

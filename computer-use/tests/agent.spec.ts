@@ -89,6 +89,11 @@ class StubActions implements DiscoveryBrowserActions {
     return { success: true, action: "readText", data: "$4,281.50" };
   }
 
+  async readTexts(target: LocatorSpec): Promise<ActionResult<string[]>> {
+    this.calls.push({ action: "read_many", target });
+    return { success: true, action: "readTexts", data: ["Savings ****4521 $4,281.50 Open View"] };
+  }
+
   async waitFor(target: LocatorSpec): Promise<ActionResult> {
     this.calls.push({ action: "waitFor", target });
     return { success: true, action: "waitFor" };
@@ -324,6 +329,48 @@ test("read returns the first extraction capture group", async () => {
   expect(run).toMatchObject({ status: "success", outputs: { currentSavingsBalance: "$4,281.50" } });
 });
 
+test("read_many returns one structured record for every matching row", async () => {
+  const actions = new StubActions();
+  actions.readTexts = async (target: LocatorSpec): Promise<ActionResult<string[]>> => {
+    actions.calls.push({ action: "read_many", target });
+    return {
+      success: true,
+      action: "readTexts",
+      data: [
+        "Savings ****5005 $0.00 Open View",
+        "Savings ****5006 $1,000.00 Open View",
+      ],
+    };
+  };
+  const records = [
+    { accountNumber: "****5005", availableBalance: "$0.00", status: "Open" },
+    { accountNumber: "****5006", availableBalance: "$1,000.00", status: "Open" },
+  ];
+  const model = new SequenceModel([
+    {
+      action: "read_many",
+      target: { role: "row", name: "Savings" },
+      outputName: "savingsAccounts",
+      outputFields: ["accountNumber", "availableBalance", "status"],
+      extractionPattern: "Savings\\s+(\\*{4}\\d{4})\\s+(\\$-?[\\d,]+\\.\\d{2})\\s+(\\S+)",
+      decisionSummary: "Every visible Savings row is required by the goal.",
+    },
+    {
+      action: "finish",
+      decisionSummary: "All Savings account records have been extracted and verified.",
+      result: { savingsAccounts: records },
+    },
+  ]);
+
+  const run = await createAgent(model, actions).run("Return every Savings account");
+
+  expect(run).toMatchObject({ status: "success", outputs: { savingsAccounts: records } });
+  expect(actions.calls).toContainEqual({
+    action: "read_many",
+    target: { strategy: "role", role: "row", name: "Savings" },
+  });
+});
+
 test("treats a successful extraction as progress when the UI stays unchanged", async () => {
   const actions = new StubActions();
   const model = new SequenceModel([
@@ -505,6 +552,7 @@ test("rejects model decision summaries longer than 200 characters", () => {
     value: null,
     inputName: null,
     outputName: null,
+    outputFields: [],
     extractionPattern: null,
     decisionSummary: "x".repeat(201),
     businessOutcome: null,
@@ -536,6 +584,7 @@ test("parses a structured model-proposed business outcome", () => {
     value: null,
     inputName: null,
     outputName: null,
+    outputFields: [],
     extractionPattern: null,
     decisionSummary: "The completed account list does not contain the requested account ending.",
     businessOutcome: {

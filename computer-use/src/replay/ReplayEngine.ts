@@ -132,8 +132,10 @@ export class ReplayEngine {
 
     for (const [stepIndex, step] of artifact.steps.entries()) {
       let stepComplete = false;
+      let outcomeTimeoutMs = step.timeoutMs;
       while (!stepComplete) {
         let execution;
+        const executionStartedAt = performance.now();
         try {
           execution = await this.dependencies.stepExecutor.execute(
             step,
@@ -149,9 +151,13 @@ export class ReplayEngine {
           );
         }
         if (execution.status === "success") {
+          outcomeTimeoutMs = Math.max(0, step.timeoutMs - (performance.now() - executionStartedAt));
           stepComplete = true;
           continue;
         }
+
+        const reconciledOutcome = await this.reconcileFailureWithApplicationState(step.id);
+        if (reconciledOutcome !== undefined) return reconciledOutcome;
 
         const reason = this.reasonFor(execution.code);
         if (reason === undefined || interventions >= (this.options.maxInterventions ?? 3)) return execution;
@@ -180,7 +186,7 @@ export class ReplayEngine {
       for (;;) {
         let outcome;
         try {
-          outcome = await this.dependencies.outcomeDetector.detect();
+          outcome = await this.dependencies.outcomeDetector.detect(outcomeTimeoutMs);
         } catch (error) {
           return this.failure(
             "UNEXPECTED_STATE",
@@ -280,6 +286,20 @@ export class ReplayEngine {
       case "HUMAN_ABORTED":
         return undefined;
     }
+  }
+
+  private async reconcileFailureWithApplicationState(stepId: string): Promise<ReplayResult | undefined> {
+    try {
+      const outcome = await this.dependencies.outcomeDetector.detect(0);
+      if (outcome.status === "business_outcome") return { ...outcome, stepId };
+      if (outcome.status === "failure"
+        && (outcome.code === "SESSION_EXPIRED" || outcome.code === "UNEXPECTED_STATE")) {
+        return { ...outcome, stepId: outcome.stepId ?? stepId };
+      }
+    } catch {
+      // Preserve the original actionable browser failure if state reconciliation cannot observe the page.
+    }
+    return undefined;
   }
 
   private async intervene(

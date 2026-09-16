@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type {
   ActionExecutionResult,
   AgentDecision,
+  AgentOutputValue,
+  AgentOutputs,
   AgentRunStatus,
   AgentStep,
   DiscoveryEvidencePaths,
@@ -15,7 +17,7 @@ export class DiscoveryRunState {
   readonly goal: string;
   readonly startedAt: string;
   private readonly steps: AgentStep[] = [];
-  private readonly outputs: Record<string, string> = {};
+  private readonly outputs: AgentOutputs = {};
   private status: AgentRunStatus = "running";
   private completedAt?: string;
   private stopReason?: string;
@@ -48,8 +50,8 @@ export class DiscoveryRunState {
     return this.previousResult;
   }
 
-  get extractedOutputs(): Record<string, string> {
-    return { ...this.outputs };
+  get extractedOutputs(): AgentOutputs {
+    return structuredClone(this.outputs);
   }
 
   get interventionCount(): number {
@@ -76,11 +78,11 @@ export class DiscoveryRunState {
     this.previousResult = result;
   }
 
-  setOutput(name: string, value: string): void {
+  setOutput(name: string, value: AgentOutputValue): void {
     this.outputs[name] = value;
   }
 
-  setOutputs(outputs: Record<string, string>): void {
+  setOutputs(outputs: AgentOutputs): void {
     Object.assign(this.outputs, outputs);
   }
 
@@ -114,7 +116,7 @@ export class DiscoveryRunState {
       ...(this.completedAt === undefined ? {} : { completedAt: this.completedAt }),
       status: this.status,
       steps: this.steps.map((step) => ({ ...step })),
-      ...(Object.keys(this.outputs).length === 0 ? {} : { outputs: { ...this.outputs } }),
+      ...(Object.keys(this.outputs).length === 0 ? {} : { outputs: structuredClone(this.outputs) }),
       ...(this.businessOutcome === undefined
         ? {}
         : {

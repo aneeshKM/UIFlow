@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
 import { evidenceWriter } from "../evidence/EvidenceWriter.js";
 import {
@@ -31,6 +32,7 @@ export interface DiscoveryBrowserActions {
   click(target: LocatorSpec): Promise<ActionResult>;
   fill(target: LocatorSpec, value: string): Promise<ActionResult>;
   readText(target: LocatorSpec): Promise<ActionResult<string>>;
+  readTexts(target: LocatorSpec): Promise<ActionResult<string[]>>;
   waitFor(target: LocatorSpec): Promise<ActionResult>;
   wait(durationMs?: number): Promise<ActionResult>;
 }
@@ -140,6 +142,10 @@ function fromBrowserResult(
       ? {}
       : { error: { type: result.error.type, message: result.error.message } }),
   };
+}
+
+function outputValuesEqual(left: unknown, right: unknown): boolean {
+  return isDeepStrictEqual(left, right);
 }
 
 async function withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -487,7 +493,7 @@ export class DiscoveryAgent {
           const extractedOutputs = state.extractedOutputs;
           const finalOutputs = decision.result ?? {};
           const unverified = Object.entries(finalOutputs)
-            .filter(([name, value]) => extractedOutputs[name] !== value)
+            .filter(([name, value]) => !outputValuesEqual(extractedOutputs[name], value))
             .map(([name]) => name);
           const omitted = Object.keys(extractedOutputs)
             .filter((name) => !Object.prototype.hasOwnProperty.call(finalOutputs, name));
@@ -529,7 +535,10 @@ export class DiscoveryAgent {
         }
 
         state.recordResult(step, result);
-        if (decision.action === "read" && result.success && result.value !== undefined && decision.outputName !== undefined) {
+        if ((decision.action === "read" || decision.action === "read_many")
+          && result.success
+          && result.value !== undefined
+          && decision.outputName !== undefined) {
           state.setOutput(decision.outputName, result.value);
           lastObservationFingerprint = undefined;
           repeatedObservationCount = 0;
@@ -572,6 +581,13 @@ export class DiscoveryAgent {
       case "read": {
         const result = fromBrowserResult("read", await this.actions.readText(targetToLocator(decision.target!)));
         if (!result.success || result.value === undefined || decision.extractionPattern === undefined) return result;
+        if (typeof result.value !== "string") {
+          return {
+            success: false,
+            action: "read",
+            error: { type: "EXTRACTION_FAILED", message: "A scalar read returned a non-string value." },
+          };
+        }
         const match = result.value.match(new RegExp(decision.extractionPattern));
         if (match === null) {
           return {
@@ -584,6 +600,48 @@ export class DiscoveryAgent {
           };
         }
         return { ...result, value: match[1] ?? match[0] };
+      }
+      case "read_many": {
+        const browserResult = await this.actions.readTexts(targetToLocator(decision.target!));
+        if (!browserResult.success) return fromBrowserResult("read_many", browserResult);
+        const pattern = decision.extractionPattern;
+        const fields = decision.outputFields;
+        if (pattern === undefined || fields === undefined || fields.length === 0) {
+          return {
+            success: false,
+            action: "read_many",
+            error: {
+              type: "EXTRACTION_FAILED",
+              message: `read_many requires a pattern and output fields for output "${decision.outputName}".`,
+            },
+          };
+        }
+        const records: Array<Record<string, string>> = [];
+        for (const text of browserResult.data ?? []) {
+          const match = text.match(new RegExp(pattern));
+          if (match === null || fields.some((_field, index) => match[index + 1] === undefined)) {
+            return {
+              success: false,
+              action: "read_many",
+              error: {
+                type: "EXTRACTION_FAILED",
+                message: `A matched row did not provide every declared field for output "${decision.outputName}".`,
+              },
+            };
+          }
+          records.push(Object.fromEntries(fields.map((field, index) => [field, match[index + 1]!])));
+        }
+        if (records.length === 0) {
+          return {
+            success: false,
+            action: "read_many",
+            error: {
+              type: "EXTRACTION_FAILED",
+              message: `No rows were available for output "${decision.outputName}".`,
+            },
+          };
+        }
+        return { success: true, action: "read_many", value: records };
       }
       case "navigate":
         return fromBrowserResult("navigate", await this.actions.navigate(new URL(decision.value!, currentUrl).toString()));

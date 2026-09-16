@@ -1,0 +1,28 @@
+{
+  "interventionId": "int-2be2c9c1-bd57-4dca-92fc-2bab6c7934d6",
+  "runId": "28bb96b9-9b0d-4e1d-9f5d-91d3dd2a6abe",
+  "source": "discovery",
+  "goal": "Look up member 23457 and return every Savings account with its masked account number, available balance as a currency string including the dollar sign, and status.",
+  "reason": "AGENT_TIMEOUT",
+  "message": "Discovery timed out while waiting for the model.",
+  "stepIndex": 1,
+  "currentUrl": "http://localhost:5174/dashboard",
+  "observation": "- banner:\n  - heading \"Northstar Credit Union\" [level=1]\n  - paragraph: Member Servicing System\n  - text: \"User: operator01 Session: Active\"\n- navigation:\n  - link \"Home\":\n    - /url: /dashboard\n  - link \"Members\":\n    - /url: /members\n  - link \"Accounts\":\n    - /url: /accounts\n  - link \"Transactions\":\n    - /url: /transactions\n  - link \"Admin\":\n    - /url: /admin\n- main:\n  - heading \"Operations Dashboard\" [level=2]\n  - text: Welcome to the Northstar Credit Union Member Servicing System. Member Services\n  - paragraph: Search for a credit union member using their member number.\n  - link \"Member Lookup\":\n    - /url: /members\n    - button \"Member Lookup\"\n  - text: Recent Activity\n  - table:\n    - rowgroup:\n      - row \"Member Activity Time\":\n        - columnheader \"Member\"\n        - columnheader \"Activity\"\n        - columnheader \"Time\"\n    - rowgroup:\n      - row \"12345 Account lookup 10:42 AM\":\n        - cell \"12345\"\n        - cell \"Account lookup\"\n        - cell \"10:42 AM\"\n      - row \"23456 Member profile viewed 10:31 AM\":\n        - cell \"23456\"\n        - cell \"Member profile viewed\"\n        - cell \"10:31 AM\"\n- contentinfo: \"System Status: Connected | Northstar Core Services\"",
+  "screenshotPath": "evidence/discovery/2026-09-16_13-04-11__28bb96b9/interventions/int-2be2/before.png",
+  "createdAt": "2026-09-16T13:04:43.039Z",
+  "control": {
+    "from": "AUTOMATION",
+    "to": "HUMAN",
+    "transferredAt": "2026-09-16T13:04:43.084Z",
+    "returnedTo": "AUTOMATION",
+    "returnedAt": "2026-09-16T13:05:51.622Z"
+  },
+  "humanActions": [],
+  "resolution": "RETRY_STEP",
+  "resolvedAt": "2026-09-16T13:05:51.622Z",
+  "evidence": {
+    "json": "evidence/discovery/2026-09-16_13-04-11__28bb96b9/interventions/int-2be2/intervention.json",
+    "beforeScreenshot": "evidence/discovery/2026-09-16_13-04-11__28bb96b9/interventions/int-2be2/before.png",
+    "afterScreenshot": "evidence/discovery/2026-09-16_13-04-11__28bb96b9/interventions/int-2be2/after.png"
+  }
+}

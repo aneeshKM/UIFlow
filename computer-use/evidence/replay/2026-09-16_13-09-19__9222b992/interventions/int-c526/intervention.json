@@ -1,32 +1,27 @@
 {
-  "interventionId": "int-7951b959-ae2f-476d-ac47-81215bae328b",
-  "runId": "e9379153-ddba-4e89-ab6e-56c3960df5ad",
+  "interventionId": "int-c5261c4a-0fa4-4910-9f5a-15be9560cc11",
+  "runId": "9222b992-8e3c-46b1-869a-d12db221dac4",
   "source": "replay",
-  "capabilityId": "get-member-savings-balance",
-  "goal": "Look up member {{memberId}} and read their current savings balance",
+  "capabilityId": "get-member-savings-accounts",
+  "goal": "Look up member {{memberId}} and return every Savings account with its masked account number, available balance as a currency string including the dollar sign, and status.",
   "reason": "LOCATOR_NOT_FOUND",
   "message": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '__demo_missing_click-search__' })\u001b[22m\n",
   "stepId": "click-search",
-  "stepIndex": 2,
+  "stepIndex": 4,
   "currentUrl": "http://localhost:5174/members",
   "observation": "- banner:\n  - heading \"Northstar Credit Union\" [level=1]\n  - paragraph: Member Servicing System\n  - text: \"User: operator01 Session: Active\"\n- navigation:\n  - link \"Home\":\n    - /url: /dashboard\n  - link \"Members\":\n    - /url: /members\n  - link \"Accounts\":\n    - /url: /accounts\n  - link \"Transactions\":\n    - /url: /transactions\n  - link \"Admin\":\n    - /url: /admin\n- main:\n  - heading \"Member Search\" [level=2]\n  - link \"Create New Member\":\n    - /url: /members/new\n    - button \"Create New Member\"\n  - text: Search Criteria Member Number\n  - textbox \"Member Number\": \"[REDACTED]\"\n  - button \"Search\"\n- contentinfo: \"System Status: Connected | Northstar Core Services\"",
-  "screenshotPath": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/before.png",
-  "createdAt": "2026-09-15T22:58:15.694Z",
+  "screenshotPath": "evidence/replay/2026-09-16_13-09-19__9222b992/interventions/int-c526/before.png",
+  "createdAt": "2026-09-16T13:09:30.489Z",
   "control": {
     "from": "AUTOMATION",
     "to": "HUMAN",
-    "transferredAt": "2026-09-15T22:58:15.734Z",
+    "transferredAt": "2026-09-16T13:09:30.527Z",
     "returnedTo": "AUTOMATION",
-    "returnedAt": "2026-09-15T22:58:43.079Z"
+    "returnedAt": "2026-09-16T13:10:10.199Z"
   },
   "humanActions": [
     {
-      "timestamp": "2026-09-15T22:58:24.572Z",
-      "action": "observe",
-      "result": "success"
-    },
-    {
-      "timestamp": "2026-09-15T22:58:35.819Z",
+      "timestamp": "2026-09-16T13:10:02.145Z",
       "action": "click",
       "target": {
         "role": "button",
@@ -36,10 +31,10 @@
     }
   ],
   "resolution": "STEP_COMPLETED",
-  "resolvedAt": "2026-09-15T22:58:43.079Z",
+  "resolvedAt": "2026-09-16T13:10:10.199Z",
   "evidence": {
-    "json": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/intervention.json",
-    "beforeScreenshot": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/before.png",
-    "afterScreenshot": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/after.png"
+    "json": "evidence/replay/2026-09-16_13-09-19__9222b992/interventions/int-c526/intervention.json",
+    "beforeScreenshot": "evidence/replay/2026-09-16_13-09-19__9222b992/interventions/int-c526/before.png",
+    "afterScreenshot": "evidence/replay/2026-09-16_13-09-19__9222b992/interventions/int-c526/after.png"
   }
 }

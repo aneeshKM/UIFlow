@@ -93,6 +93,12 @@ function targetSlug(target: ArtifactTarget): string {
   return toKebabCase(target.testId);
 }
 
+function primaryPageHeading(ariaSnapshot: string): string | undefined {
+  const mainStart = ariaSnapshot.indexOf("- main:");
+  const pageRegion = mainStart === -1 ? ariaSnapshot : ariaSnapshot.slice(mainStart);
+  return pageRegion.match(/- heading "([^"]+)"/)?.[1];
+}
+
 function uniqueStepId(base: string, used: Set<string>): string {
   const safeBase = toKebabCase(base) || "step";
   let id = safeBase;
@@ -131,6 +137,13 @@ function assertSuccessfulRun(run: DiscoveryRun): void {
   }
 }
 
+function collectStrings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value !== null && typeof value === "object") return Object.values(value).flatMap(collectStrings);
+  return [];
+}
+
 export class ArtifactBuilder {
   private readonly validator: ArtifactValidator;
   private readonly now: () => Date;
@@ -150,14 +163,14 @@ export class ArtifactBuilder {
 
   build(run: DiscoveryRun): CapabilityArtifact {
     assertSuccessfulRun(run);
-    const successfulDecisions = run.steps
-      .filter((step) => step.decision !== undefined && step.result?.success === true)
-      .map((step) => step.decision!);
+    const successfulSteps = run.steps
+      .filter((step) => step.decision !== undefined && step.result?.success === true);
+    const successfulDecisions = successfulSteps.map((step) => step.decision!);
     const bindings = this.deriveInputs(successfulDecisions);
     const outputs = this.deriveOutputs(run, bindings);
     const dynamicValues = [
       ...bindings.map(({ concreteValue }) => concreteValue),
-      ...Object.values(run.outputs ?? {}),
+      ...collectStrings(run.outputs ?? {}),
     ];
     const firstUrl = new URL(run.steps[0]!.url);
     const usedIds = new Set<string>();
@@ -190,10 +203,32 @@ export class ArtifactBuilder {
       }
       const mapped = this.mapDecision(decision, bindings, dynamicValues, usedIds);
       if (mapped !== undefined) steps.push(mapped);
+
+      const currentDiscoveryStep = successfulSteps[index]!;
+      const nextDiscoveryStep = successfulSteps[index + 1];
+      if (decision.action === "click"
+        && nextDiscoveryStep !== undefined
+        && currentDiscoveryStep.observation.url !== nextDiscoveryStep.observation.url) {
+        const headingName = primaryPageHeading(nextDiscoveryStep.observation.ariaSnapshot);
+        if (headingName !== undefined) {
+          const target: ArtifactTarget = {
+            role: "heading",
+            name: stableLocatorText(headingName, dynamicValues),
+          };
+          steps.push({
+            id: uniqueStepId(`wait-for-${targetSlug(target)}`, usedIds),
+            action: "wait_for",
+            target,
+            timeoutMs: this.timeoutMs,
+            expected: { kind: "visible", target },
+          });
+        }
+      }
     }
 
     const extractionSteps = steps.filter(
-      (step): step is Extract<CapabilityStep, { action: "extract" }> => step.action === "extract",
+      (step): step is Extract<CapabilityStep, { action: "extract" | "extract_many" }> =>
+        step.action === "extract" || step.action === "extract_many",
     );
     const checkpointConditions: CheckpointCondition[] = [];
     for (const step of extractionSteps) {
@@ -229,8 +264,10 @@ export class ArtifactBuilder {
     };
     const executable = JSON.stringify({ ...artifact, metadata: undefined });
     for (const [name, value] of Object.entries(run.outputs ?? {})) {
-      if (value.length >= 4 && executable.includes(value)) {
-        throw new Error(`Discovery-time output value for "${name}" would be persisted in the artifact.`);
+      for (const concreteValue of collectStrings(value)) {
+        if (concreteValue.length >= 4 && executable.includes(concreteValue)) {
+          throw new Error(`Discovery-time output value for "${name}" would be persisted in the artifact.`);
+        }
       }
     }
     return this.validator.validate(artifact);
@@ -268,17 +305,35 @@ export class ArtifactBuilder {
     const inputValues = new Set(bindings.map(({ concreteValue }) => concreteValue));
     const names = new Set<string>();
     for (const step of run.steps) {
-      if (step.decision?.action === "read" && step.result?.success && step.decision.outputName !== undefined) {
+      if ((step.decision?.action === "read" || step.decision?.action === "read_many")
+        && step.result?.success
+        && step.decision.outputName !== undefined) {
         names.add(step.decision.outputName);
       }
     }
     for (const [name, value] of Object.entries(run.outputs ?? {})) {
-      if (!inputValues.has(value) && !names.has(name)) {
+      if (!(typeof value === "string" && inputValues.has(value)) && !names.has(name)) {
         throw new Error(`Output "${name}" has no successful structured read extraction.`);
       }
     }
     if (names.size === 0) throw new Error("Successful discovery did not produce a reusable output.");
-    return [...names].map((name) => ({ name, type: "string" as const }));
+    return [...names].map((name): OutputDefinition => {
+      const decision = run.steps.find((step) =>
+        step.decision?.outputName === name
+        && step.result?.success
+        && (step.decision.action === "read" || step.decision.action === "read_many"))?.decision;
+      if (decision?.action === "read_many") {
+        if (decision.outputFields === undefined || decision.outputFields.length === 0) {
+          throw new Error(`Collection output "${name}" has no declared output fields.`);
+        }
+        return {
+          name,
+          type: "record_list",
+          fields: decision.outputFields.map((field) => ({ name: field, type: "string" })),
+        };
+      }
+      return { name, type: "string" };
+    });
   }
 
   private mapDecision(
@@ -332,6 +387,29 @@ export class ArtifactBuilder {
           target,
           output: decision.outputName,
           ...(decision.extractionPattern === undefined ? {} : { pattern: decision.extractionPattern }),
+          timeoutMs: this.timeoutMs,
+          expected: { kind: "output_present", output: decision.outputName },
+        };
+      }
+      case "read_many": {
+        if (decision.outputName === undefined) throw new Error("Successful read_many decision has no outputName.");
+        if (decision.outputFields === undefined || decision.outputFields.length === 0) {
+          throw new Error(`Collection output "${decision.outputName}" has no declared output fields.`);
+        }
+        if (decision.extractionPattern === undefined) {
+          throw new Error(`Collection output "${decision.outputName}" has no extraction pattern.`);
+        }
+        if (/\d{3,}/.test(decision.extractionPattern)) {
+          throw new Error(`Extraction pattern for output "${decision.outputName}" contains a copied literal value.`);
+        }
+        const target = toArtifactTarget(decision.target!, dynamicValues);
+        return {
+          id: uniqueStepId(`extract-${decision.outputName}`, usedIds),
+          action: "extract_many",
+          target,
+          output: decision.outputName,
+          fields: decision.outputFields,
+          pattern: decision.extractionPattern,
           timeoutMs: this.timeoutMs,
           expected: { kind: "output_present", output: decision.outputName },
         };
