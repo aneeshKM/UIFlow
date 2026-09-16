@@ -8,7 +8,7 @@ Discovery is the only model-driven path. It observes the live banking UI, asks t
 
 The current surface adapter is Playwright. Browser-specific interpretation stays below the artifact boundary: artifacts contain semantic targets rather than Playwright code, CSS selectors, JavaScript, or coordinates. The trade-off is that the working slice favors accessible web semantics; lower-quality legacy and desktop surfaces would require additional adapters.
 
-The full implementation guide is in [computer-use/README.md](computer-use/README.md).
+Setup, validation, and the complete demo path are documented in [README.md](README.md).
 
 ## 2. Artifact schema
 
@@ -18,7 +18,7 @@ Targets prefer ARIA role and accessible name, with schema support for label, tex
 
 `ArtifactValidator` checks the schema version, action support, unique names and step IDs, references, output-producing steps, checkpoint references, regular expressions, action allowlists, and common secret fields or values. Replay validates again on load because an artifact may have been edited after discovery. The artifact can narrow runtime policy but cannot expand it. Operational model summaries and concrete discovery-time outputs are deliberately excluded.
 
-The canonical example is [get-member-savings-accounts.v1.json](computer-use/artifacts/get-member-savings-accounts.v1.json).
+The canonical example is [get-member-savings-accounts.v1.json](artifacts/get-member-savings-accounts.v1.json).
 
 ## 3. Determinism & error handling
 

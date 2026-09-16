@@ -6,6 +6,31 @@
 **/dist/
 **/dist-ssr/
 *.log
+test-results/
+playwright-report/
+
+# Generated evidence (canonical reviewed runs are explicitly retained)
+evidence/screenshots/*.png
+evidence/traces/*.zip
+evidence/discovery/*
+!evidence/discovery/.gitkeep
+!evidence/discovery/2026-09-16_13-04-11__28bb96b9/
+!evidence/discovery/2026-09-16_13-04-11__28bb96b9/**
+evidence/replay/*
+!evidence/replay/.gitkeep
+!evidence/replay/2026-09-16_13-08-47__a39bf8fc/
+!evidence/replay/2026-09-16_13-08-47__a39bf8fc/**
+!evidence/replay/2026-09-16_13-08-49__6f791177/
+!evidence/replay/2026-09-16_13-08-49__6f791177/**
+!evidence/replay/2026-09-16_13-08-51__fa81ad15/
+!evidence/replay/2026-09-16_13-08-51__fa81ad15/**
+!evidence/replay/2026-09-16_13-08-52__d7be1f2b/
+!evidence/replay/2026-09-16_13-08-52__d7be1f2b/**
+!evidence/replay/2026-09-16_13-08-54__6906706d/
+!evidence/replay/2026-09-16_13-08-54__6906706d/**
+!evidence/replay/2026-09-16_13-09-19__9222b992/
+!evidence/replay/2026-09-16_13-09-19__9222b992/**
+evidence/escalation/*
 
 # Python
 **/__pycache__/

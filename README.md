@@ -4,11 +4,11 @@ This repository is a complete take-home submission for the interface.ai computer
 
 ## Submission map
 
-- [Computer-use implementation and full operating guide](computer-use/README.md)
+- [Automation source](src/)
 - [Design report](REPORT.md)
 - [Canonical evidence index](evidence/README.md)
 - [Synthetic Northstar Credit Union application](bank-app/README.md)
-- [Saved callable artifact](computer-use/artifacts/get-member-savings-accounts.v1.json)
+- [Saved callable artifact](artifacts/get-member-savings-accounts.v1.json)
 
 ## Architecture at a glance
 
@@ -41,13 +41,12 @@ Discovery, replay, and human intervention share the same policy-controlled brows
 Install the automation dependencies and browser:
 
 ```bash
-cd computer-use
 npm ci
 npx playwright install chromium
 cp .env.example .env
 ```
 
-Set `OPENAI_API_KEY` in `computer-use/.env` for discovery. Deterministic replay does not require an OpenAI key.
+Set `OPENAI_API_KEY` in `.env` for discovery. Deterministic replay does not require an OpenAI key.
 
 Start the synthetic banking backend from the repository root:
 
@@ -71,7 +70,7 @@ The app will be available at `http://localhost:5174`. All seeded members and fin
 
 ## Demo path
 
-From `computer-use/`, run genuine model-driven discovery:
+From the repository root, run genuine model-driven discovery:
 
 ```bash
 npm run discover -- \
@@ -111,14 +110,13 @@ npm run replay -- \
   --demo-failure click-search
 ```
 
-The detailed operator commands and additional scenarios are documented in the [implementation README](computer-use/README.md#run-the-human-escalation-demo).
+After the forced locator retry is exhausted, enter `observe`, then `click`, `button`, `Search`, and `complete`. Press Enter for the optional note. The same browser session transfers exclusively to the human, records the constrained operator action, returns control to automation, and continues from the next step.
 
 ## Validation
 
 With both demo services running:
 
 ```bash
-cd computer-use
 npm run typecheck
 npm test
 ```
@@ -134,7 +132,7 @@ npm run build
 
 ## Configuration and offline boundaries
 
-Environment settings are documented in [`computer-use/.env.example`](computer-use/.env.example). Discovery requires the local demo application and an OpenAI API key. Replay requires the local demo application but no model service. Unit tests use model and browser-layer test doubles; the explicitly live browser tests require the frontend and backend.
+Environment settings are documented in [`.env.example`](.env.example). Discovery requires the local demo application and an OpenAI API key. Replay requires the local demo application but no model service. Unit tests use model and browser-layer test doubles; the explicitly live browser tests require the frontend and backend.
 
 ## Safety note
 

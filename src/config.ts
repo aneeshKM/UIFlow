@@ -61,7 +61,7 @@ export function readConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
 export function readDiscoveryConfig(environment: NodeJS.ProcessEnv = process.env): DiscoveryConfig {
   const config = readConfig(environment);
   if (!config.openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is required to run discovery. Add it to computer-use/.env.");
+    throw new Error("OPENAI_API_KEY is required to run discovery. Add it to .env.");
   }
   return config;
 }
