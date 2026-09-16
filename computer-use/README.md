@@ -137,7 +137,7 @@ npm run replay -- \
   --memberId 99999
 ```
 
-The first command returns `success` and `savingsBalance: "$4,281.50"`. The second returns the valid business outcome `MEMBER_NOT_FOUND` with a successful process exit. Member `23458` similarly returns `NO_ACCOUNTS_FOUND`. Replay validates the artifact and runtime inputs, applies policy before every step, retries a recoverable locator failure once, detects known application states, and evaluates the final checkpoint.
+The first command returns `success` and `savingsBalance: "$4,281.50"`. The second returns the valid business outcome `MEMBER_NOT_FOUND` with a successful process exit. Member `23458` similarly returns `NO_ACCOUNTS_FOUND`. During discovery, a completed account search that omits a specifically requested account can return `REQUESTED_ACCOUNT_NOT_FOUND` after the application outcome adapter validates the goal and observable results. Replay validates the artifact and runtime inputs, applies policy before every step, retries a recoverable locator failure once, detects known application states, and evaluates the final checkpoint.
 
 To prove that replay is model-independent:
 
@@ -175,11 +175,13 @@ Every run uses a consistent record with IDs, status, actions or completed steps,
 
 Discovery does not request or persist private model chain-of-thought. It may store `decisionSummary`, a redacted operational explanation of at most 200 characters based only on the goal and observable UI. This summary supports debugging and auditability but is not authoritative audit evidence; observed UI state, executed actions, results, and checkpoints remain the source of truth. Decision summaries are excluded from reusable capability artifacts and deterministic replay records. Screenshots and traces contain only the synthetic demo application and must receive deployment-specific retention and access controls with real customer data.
 
+Terminal run states distinguish successful requested output, an expected `business_outcome`, and a hard `failure`. Recoverable loading, locator, and model conditions are retried or escalated rather than mislabeled as business outcomes. After receiving a settled observation, the model may return `REQUESTED_ACCOUNT_NOT_FOUND`; the runtime validates the structured decision and policy, records the observation and outcome, and does not independently reinterpret the application's business semantics. The outcome describes the UI state observed at the evidence timestamp, not a transactional guarantee that the underlying state cannot change later.
+
 The small checked-in review set is indexed in [evidence/README.md](evidence/README.md). New run folders remain ignored so routine demos do not pollute the repository.
 
 ## Safety
 
-- The action schema exposes only observe/read, click, type, wait, allowed navigation, finish, and fail semantics. It exposes no JavaScript, shell, upload, download, or arbitrary Playwright execution.
+- The action schema exposes only observe/read, click, type, wait, allowed navigation, finish, structured business-outcome, and fail semantics. It exposes no JavaScript, shell, upload, download, or arbitrary Playwright execution.
 - `ActionPolicy` is the single authority for allowed actions, origins, route prefixes, and risk. Requested navigation is checked before execution and the resulting URL is checked after navigation or redirects.
 - Safe actions execute automatically. State-changing actions return `POLICY_REQUIRES_HUMAN`. Irreversible actions return `POLICY_BLOCKED` for automation and humans.
 - Discovery, replay, setup actions, observation, screenshots, and the operator console all pass through the policy-bound browser layer. `SessionControl` prevents concurrent human and automation ownership.

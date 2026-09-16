@@ -447,6 +447,13 @@ export class DiscoveryAgent {
           return this.complete(state, "failure", `policy_rejected: ${result.error?.message}`);
         }
 
+        if (decision.action === "business_outcome") {
+          state.recordResult(step, { success: true, action: "business_outcome" });
+          state.setBusinessOutcome(decision.businessOutcome!);
+          await this.reportStep(step);
+          return this.complete(state, "business_outcome", undefined);
+        }
+
         const actionSignature = repeatedActionSignature(decision, observation.url);
         if (actionSignature !== undefined) {
           const attempts = (repeatedActions.get(actionSignature) ?? 0) + 1;
@@ -589,6 +596,8 @@ export class DiscoveryAgent {
         );
       case "finish":
         return { success: true, action: "finish" };
+      case "business_outcome":
+        return { success: true, action: "business_outcome" };
       case "fail":
         return {
           success: false,

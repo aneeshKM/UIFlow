@@ -17,6 +17,7 @@ const ALLOWED_ACTIONS = new Set<PolicyAction>([
   "read",
   "wait",
   "finish",
+  "business_outcome",
   "fail",
 ]);
 const BLOCKED_CONTROL = /\b(delete|remove|transfer|wire|payment|close (?:an? )?(?:account|member)|terminate)\b/i;
@@ -115,8 +116,16 @@ export class ActionPolicy {
         if (decision.target !== undefined) this.validateTarget(decision.target);
         break;
       case "finish":
+      case "business_outcome":
       case "fail":
         break;
+    }
+
+    if (decision.action === "business_outcome" && decision.businessOutcome === undefined) {
+      throw new PolicyViolation("business_outcome requires a structured businessOutcome.");
+    }
+    if (decision.action !== "business_outcome" && decision.businessOutcome !== undefined) {
+      throw new PolicyViolation("businessOutcome is only allowed with the business_outcome action.");
     }
 
     this.assertAllowed({

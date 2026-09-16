@@ -4,7 +4,15 @@ import type { BusinessOutcome } from "../outcomes/types.js";
 type RoleLocatorSpec = Extract<LocatorSpec, { strategy: "role" }>;
 
 export type AgentRole = RoleLocatorSpec["role"];
-export type AgentActionType = "click" | "type" | "read" | "navigate" | "wait" | "finish" | "fail";
+export type AgentActionType =
+  | "click"
+  | "type"
+  | "read"
+  | "navigate"
+  | "wait"
+  | "finish"
+  | "business_outcome"
+  | "fail";
 export type AgentRunStatus = "running" | "success" | "business_outcome" | "failure" | "stopped";
 
 export interface AgentTarget {
@@ -21,6 +29,7 @@ export interface AgentDecision {
   outputName?: string;
   extractionPattern?: string;
   decisionSummary: string;
+  businessOutcome?: BusinessOutcome;
   result?: Record<string, string>;
 }
 

@@ -2,6 +2,7 @@ export const BUSINESS_OUTCOME_CODES = [
   "MEMBER_NOT_FOUND",
   "NO_ACCOUNTS_FOUND",
   "ACCOUNT_TYPE_NOT_FOUND",
+  "REQUESTED_ACCOUNT_NOT_FOUND",
 ] as const;
 
 export type BusinessOutcomeCode = typeof BUSINESS_OUTCOME_CODES[number];

@@ -10,6 +10,7 @@ export type PolicyAction =
   | "read"
   | "wait"
   | "finish"
+  | "business_outcome"
   | "fail";
 
 export interface PolicyTarget {

@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { zodTextFormat } from "openai/helpers/zod";
 import { DiscoveryAgent, type DiscoveryBrowserActions, type DiscoverySurfaceObserver } from "../src/agent/DiscoveryAgent.js";
 import { redactDiscoveryRun } from "../src/agent/DiscoveryAgent.js";
-import { AgentDecisionSchema } from "../src/agent/actionSchema.js";
+import { AgentDecisionSchema, parseAgentDecision } from "../src/agent/actionSchema.js";
 import type { AgentDecision, AgentDecisionContext, AgentModel, DiscoveryRun } from "../src/agent/types.js";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../src/browser/types.js";
 import { ActionPolicy } from "../src/policy/ActionPolicy.js";
@@ -193,6 +193,85 @@ test("returns a business outcome before calling the model when the member has no
     },
   });
   expect(model.calls).toBe(0);
+  expect(actions.calls).toHaveLength(0);
+});
+
+test("accepts a schema- and policy-valid model-proposed business outcome", async () => {
+  const actions = new StubActions();
+  const accountResults: SurfaceObservation = {
+    ...observation,
+    url: `${bankUrl}/members/23457`,
+    visibleText: [
+      "Member Information",
+      "Member ID 23457",
+      "Accounts",
+      "Account Type Account Number Available Balance Current Balance Status",
+      "Savings ****5005 $0.00 $0.00 Open",
+      "Savings ****5006 $1,000.00 $1,000.00 Open",
+    ].join("\n"),
+    ariaSnapshot: '- heading "Member Information"\n- text: "Member ID 23457"\n- row "Savings ****5005 $0.00 $0.00 Open"\n- row "Savings ****5006 $1,000.00 $1,000.00 Open"',
+  };
+  const model = new SequenceModel([{
+    action: "business_outcome",
+    businessOutcome: {
+      code: "REQUESTED_ACCOUNT_NOT_FOUND",
+      details: { accountEnding: "5007" },
+    },
+    decisionSummary: "The completed account list does not contain the requested account ending 5007.",
+  }]);
+
+  const run = await createAgent(
+    model,
+    actions,
+    5,
+    undefined,
+    new SequenceObserver([accountResults]),
+  ).run("Check the savings balance for member 23457 with account ending from 5007");
+
+  expect(run).toMatchObject({
+    status: "business_outcome",
+    businessOutcome: {
+      code: "REQUESTED_ACCOUNT_NOT_FOUND",
+      details: { accountEnding: "5007" },
+    },
+    steps: [{
+      result: { success: true, action: "business_outcome" },
+    }],
+  });
+  expect(run.interventions).toBeUndefined();
+  expect(actions.calls).toHaveLength(0);
+});
+
+test("rejects a business-outcome action without its structured payload", async () => {
+  const actions = new StubActions();
+  const model = new SequenceModel([{
+    action: "business_outcome",
+    decisionSummary: "The settled UI indicates an expected business outcome.",
+  }]);
+
+  const run = await createAgent(model, actions).run("Check the requested account");
+
+  expect(run).toMatchObject({ status: "failure" });
+  expect(run.stopReason).toContain("business_outcome requires a structured businessOutcome");
+  expect(actions.calls).toHaveLength(0);
+});
+
+test("rejects a business-outcome payload attached to another action", async () => {
+  const actions = new StubActions();
+  const model = new SequenceModel([{
+    action: "finish",
+    businessOutcome: {
+      code: "REQUESTED_ACCOUNT_NOT_FOUND",
+      details: { accountEnding: "5007" },
+    },
+    decisionSummary: "The requested workflow is complete.",
+    result: {},
+  }]);
+
+  const run = await createAgent(model, actions).run("Check the requested account");
+
+  expect(run).toMatchObject({ status: "failure" });
+  expect(run.stopReason).toContain("businessOutcome is only allowed with the business_outcome action");
   expect(actions.calls).toHaveLength(0);
 });
 
@@ -428,6 +507,7 @@ test("rejects model decision summaries longer than 200 characters", () => {
     outputName: null,
     extractionPattern: null,
     decisionSummary: "x".repeat(201),
+    businessOutcome: null,
     result: [],
   });
 
@@ -447,6 +527,29 @@ test("generates a strict Structured Outputs schema without unsupported compositi
     pattern: "^[^\\r\\n]*\\S[^\\r\\n]*$",
   });
   expect(decisionSummary).not.toHaveProperty("allOf");
+});
+
+test("parses a structured model-proposed business outcome", () => {
+  expect(parseAgentDecision({
+    action: "business_outcome",
+    target: null,
+    value: null,
+    inputName: null,
+    outputName: null,
+    extractionPattern: null,
+    decisionSummary: "The completed account list does not contain the requested account ending.",
+    businessOutcome: {
+      code: "REQUESTED_ACCOUNT_NOT_FOUND",
+      details: [{ name: "accountEnding", value: "5007" }],
+    },
+    result: null,
+  })).toMatchObject({
+    action: "business_outcome",
+    businessOutcome: {
+      code: "REQUESTED_ACCOUNT_NOT_FOUND",
+      details: { accountEnding: "5007" },
+    },
+  });
 });
 
 test("writes discovery evidence with full IDs and the existing evidence JSON shape", async () => {

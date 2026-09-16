@@ -20,6 +20,8 @@ Supported artifact actions are `navigate`, `click`, `type`, `extract`, `wait_for
 
 Replay has no model or prompt dependency. It resolves inputs, executes steps in order, stores declared outputs, checks step expectations, detects application outcomes, and evaluates the final checkpoint. A missing member returns `MEMBER_NOT_FOUND`, a successful business outcome rather than an automation failure.
 
+Discovery uses separate terminal semantics for requested output success, expected business outcomes, and hard automation failures. Explicit messages such as `NO_ACCOUNTS_FOUND` remain deterministic application-state detections. From a settled observation, the model can return `REQUESTED_ACCOUNT_NOT_FOUND`; the runtime validates the structured decision and policy without independently reinterpreting the application's business semantics. The recorded outcome is tied to the evidence observation and timestamp rather than presented as a transactional guarantee about later application state. Loading, uncertainty, unsupported UI, and technical errors cannot use this path.
+
 Locator timeouts receive one refreshed observation and one retry. Hard failures are not retried generically. Structured failures distinguish invalid input, missing locator, timeout, action failure, policy rejection, session expiry, unexpected state, checkpoint failure, and human abort. External destinations are rejected before navigation; the actual URL is checked after navigation to catch redirects. Replay succeeds with an invalid OpenAI key, demonstrating that learned behavior resides in the artifact rather than an inference-time model call.
 
 ## 4. Heterogeneity & multi-tenant
@@ -38,7 +40,7 @@ The intervention record includes intervention/run IDs, source, capability and fa
 
 ## 6. Safety
 
-`ActionPolicy` centralizes the action allowlist, configured origin and route-prefix allowlists, and `SAFE`, `REQUIRES_HUMAN`, and `BLOCKED` decisions. Browser actions check ownership and policy before touching the page, then verify the resulting URL. Discovery validates model decisions before execution. Replay validates both the artifact and every step. Operator commands stay inside the same browser boundary.
+`ActionPolicy` centralizes the action allowlist, configured origin and route-prefix allowlists, and `SAFE`, `REQUIRES_HUMAN`, and `BLOCKED` decisions. Browser actions check ownership and policy before touching the page, then verify the resulting URL. Discovery validates model decisions for structure and policy before execution or terminal acceptance. Replay validates both the artifact and every step. Operator commands stay inside the same browser boundary.
 
 `EvidenceWriter` sanitizes JSON before persistence through one recursive `Redactor`. Key-based rules cover passwords, passcodes, API keys, authorization, cookies, session IDs, tokens, and client secrets; pattern rules cover common bearer/API-key strings and selected PII formats. Operator typed values and form-control observations receive contextual redaction.
 

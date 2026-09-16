@@ -174,7 +174,7 @@ export class ArtifactBuilder {
 
     for (let index = 0; index < successfulDecisions.length; index += 1) {
       const decision = successfulDecisions[index]!;
-      if (decision.action === "finish" || decision.action === "fail") continue;
+      if (decision.action === "finish" || decision.action === "business_outcome" || decision.action === "fail") continue;
       if (decision.action === "wait" && decision.target === undefined) {
         const nextTarget = successfulDecisions.slice(index + 1).find((candidate) => candidate.target !== undefined)?.target;
         if (nextTarget === undefined) continue;
@@ -347,6 +347,7 @@ export class ArtifactBuilder {
         };
       }
       case "finish":
+      case "business_outcome":
       case "fail":
         return undefined;
     }

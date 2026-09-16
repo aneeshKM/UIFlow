@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DECISION_SUMMARY_MAX_LENGTH, sanitizeDecisionSummary } from "../evidence/Redactor.js";
+import { BUSINESS_OUTCOME_CODES } from "../outcomes/types.js";
 import type { AgentDecision, AgentRole } from "./types.js";
 
 export const AgentRoles = [
@@ -45,10 +46,15 @@ const AgentOutputSchema = z.object({
   value: z.string(),
 }).strict();
 
+const AgentBusinessOutcomeSchema = z.object({
+  code: z.enum(BUSINESS_OUTCOME_CODES),
+  details: z.array(AgentOutputSchema),
+}).strict();
+
 // Structured Outputs requires every property to be required. Nullable fields
 // represent optional domain fields and are removed by parseAgentDecision().
 export const AgentDecisionSchema = z.object({
-  action: z.enum(["click", "type", "read", "navigate", "wait", "finish", "fail"]),
+  action: z.enum(["click", "type", "read", "navigate", "wait", "finish", "business_outcome", "fail"]),
   target: AgentTargetSchema.nullable(),
   value: z.string().nullable(),
   inputName: z.string().nullable(),
@@ -59,6 +65,7 @@ export const AgentDecisionSchema = z.object({
     .max(DECISION_SUMMARY_MAX_LENGTH)
     .regex(/^[^\r\n]*\S[^\r\n]*$/, "decisionSummary must be a nonblank, single-line sentence.")
     .describe("One short operational sentence based only on the goal and observable UI that explains why the selected action is appropriate. Never include private chain-of-thought, speculation, credentials, secrets, tokens, or unnecessary PII."),
+  businessOutcome: AgentBusinessOutcomeSchema.nullable(),
   result: z.array(AgentOutputSchema).nullable(),
 }).strict();
 
@@ -76,6 +83,14 @@ export function parseAgentDecision(input: unknown): AgentDecision {
   const result = parsed.result === null
     ? undefined
     : Object.fromEntries(parsed.result.map(({ name, value }) => [name, value]));
+  const businessOutcome = parsed.businessOutcome === null
+    ? undefined
+    : {
+        code: parsed.businessOutcome.code,
+        ...(parsed.businessOutcome.details.length === 0
+          ? {}
+          : { details: Object.fromEntries(parsed.businessOutcome.details.map(({ name, value }) => [name, value])) }),
+      };
 
   return {
     action: parsed.action,
@@ -85,6 +100,7 @@ export function parseAgentDecision(input: unknown): AgentDecision {
     ...(parsed.outputName === null ? {} : { outputName: parsed.outputName }),
     ...(parsed.extractionPattern === null ? {} : { extractionPattern: parsed.extractionPattern }),
     decisionSummary: sanitizeDecisionSummary(parsed.decisionSummary),
+    ...(businessOutcome === undefined ? {} : { businessOutcome }),
     ...(result === undefined ? {} : { result }),
   };
 }

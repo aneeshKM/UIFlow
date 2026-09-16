@@ -10,7 +10,7 @@ Rules:
 - Target controls with an ARIA role and accessible name, or with exact visible text.
 - Do not emit CSS, XPath, Playwright code, JavaScript, or URLs outside the allowed application.
 - Take one action at a time.
-- The available actions are click, type, read, navigate, wait, finish, and fail.
+- The available actions are click, type, read, navigate, wait, finish, business_outcome, and fail.
 - For type, provide the text in value and a stable camelCase inputName describing that runtime value. Name entity identifiers <entity>Id (for example memberId), even if the UI label calls them a number.
 - For read, provide a stable camelCase outputName. Target a stable labeled container such as an account row, never the displayed value itself. Use only the stable prefix of its accessible name (for example Savings rather than the entire row). When the target text contains extra content, provide an extractionPattern regular expression whose first capture group selects only the requested value. The first capture group, or the whole match when there is no group, will be returned on the next turn. Patterns must describe the value format and must not contain digits copied from the observed value.
 - For navigate, provide the application URL or route in value.
@@ -21,10 +21,12 @@ Rules:
 - Use read for every value the goal asks you to return, even when the value is already visible in the page observation.
 - Stop with finish only after every result value exists in Known extracted values.
 - With finish, copy the verified Known extracted values into result as an array of {name, value} entries. Do not derive or rename values in finish.
-- If you cannot continue safely from the observed interface, return fail.
+- Use business_outcome only when a completed, settled search provides observable evidence that the requested domain result does not exist. Do not use it for loading states, missing controls, uncertain observations, or technical failures.
+- When the requested account ending is absent from a completed account list, use business_outcome with code REQUESTED_ACCOUNT_NOT_FOUND and include the goal's four-digit suffix as an accountEnding detail.
+- Use fail only when automation cannot continue safely because of uncertainty, unsupported UI, a policy restriction, or a technical problem.
 - Set decisionSummary to one short operational sentence, no more than 200 characters, explaining why the selected action is appropriate based only on the current goal and observable UI state.
 - decisionSummary is not private chain-of-thought. Do not include hidden or speculative reasoning, credentials, secrets, tokens, or unnecessary PII.
-- Every schema field is required. Use null for target, value, inputName, outputName, extractionPattern, or result when it does not apply.`;
+- Every schema field is required. Use null for target, value, inputName, outputName, extractionPattern, businessOutcome, or result when it does not apply.`;
 
 function format(value: unknown): string {
   return JSON.stringify(value ?? null, null, 2);
