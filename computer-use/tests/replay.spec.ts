@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { CapabilityArtifact } from "../src/artifact/types.js";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../src/browser/types.js";
+import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 import { CheckpointEvaluator } from "../src/replay/CheckpointEvaluator.js";
 import { InputResolver } from "../src/replay/InputResolver.js";
 import { ReplayEngine } from "../src/replay/ReplayEngine.js";
@@ -69,10 +70,12 @@ class StubActions implements ReplayBrowserActions {
 class StubObserver implements ReplaySurfaceObserver {
   observations = 0;
 
+  constructor(private readonly url = "http://localhost:5174/members/12345") {}
+
   async observe(): Promise<SurfaceObservation> {
     this.observations += 1;
     return {
-      url: "http://localhost:5174/members/12345",
+      url: this.url,
       title: "bank-app",
       visibleText: "Member Information Savings $4,281.50",
       ariaSnapshot: '- heading "Member Information"',
@@ -102,12 +105,14 @@ function createEngine(
   }> = {},
 ): { engine: ReplayEngine; actions: StubActions } {
   const inputs = new InputResolver();
+  const policy = new ActionPolicy("http://localhost:5174", ["/login", "/dashboard", "/members"]);
   return {
     engine: new ReplayEngine({
-      stepExecutor: overrides.stepExecutor ?? new StepExecutor(actions, observer, inputs, capability.inputs),
+      stepExecutor: overrides.stepExecutor ?? new StepExecutor(actions, observer, inputs, capability.inputs, policy),
       checkpointEvaluator: overrides.checkpointEvaluator ?? new CheckpointEvaluator(actions, observer),
       outcomeDetector: overrides.outcomeDetector ?? normalOutcome,
       inputResolver: inputs,
+      actionPolicy: policy,
     }, { runId: "replay-test", now: () => 100 }),
     actions,
   };
@@ -122,7 +127,7 @@ test("executes artifact steps in order and injects the runtime memberId", async 
   expect(result.status).toBe("success");
   expect(actions.calls.filter(({ action }) =>
     ["navigate", "fill", "click", "waitFor", "readText"].includes(action)).map(({ action }) => action))
-    .toEqual(["navigate", "fill", "click", "click", "waitFor", "readText"]);
+    .toEqual(["navigate", "fill", "click", "waitFor", "click", "readText"]);
   expect(actions.calls).toContainEqual(expect.objectContaining({
     action: "fill",
     value: "12345",
@@ -141,7 +146,7 @@ test("stores extracted output and returns success only after the checkpoint pass
     capabilityId: "get-member-savings-balance",
     capabilityVersion: 1,
     runId: "replay-test",
-    outputs: { currentSavingsBalance: "$4,281.50" },
+    outputs: { savingsBalance: "$4,281.50" },
     completedSteps: 6,
     durationMs: 0,
   });
@@ -185,14 +190,45 @@ test("blocks artifact navigation to an external origin", async () => {
 
   await expect(replay.engine.run(external, { memberId: "12345" })).resolves.toMatchObject({
     status: "failure",
-    code: "ACTION_FAILED",
+    code: "POLICY_BLOCKED",
     stepId: "navigate-members",
     message: /outside http:\/\/localhost:5174 is blocked/,
   });
   expect(replay.actions.calls).toHaveLength(0);
 });
 
-test("blocks review and blocked risk artifacts before browser execution", async () => {
+test("stops replay when an allowed navigation redirects outside the origin", async () => {
+  const capability = await artifact();
+  const observer = new StubObserver("https://example.com/redirected");
+  const replay = createEngine(capability, new StubActions(), observer);
+
+  await expect(replay.engine.run(capability, { memberId: "12345" })).resolves.toMatchObject({
+    status: "failure",
+    code: "POLICY_BLOCKED",
+    stepId: "navigate-members",
+  });
+  expect(replay.actions.calls).toEqual([
+    { action: "navigate", url: "http://localhost:5174/members" },
+  ]);
+});
+
+test("a risky step requests human intervention before the browser action", async () => {
+  const capability = await artifact();
+  const risky = structuredClone(capability);
+  const click = risky.steps.find((step) => step.action === "click");
+  if (click?.action !== "click") throw new Error("Expected click step");
+  click.target = { role: "button", name: "Create account" };
+  const replay = createEngine(risky);
+
+  await expect(replay.engine.run(risky, { memberId: "12345" })).resolves.toMatchObject({
+    status: "failure",
+    code: "POLICY_REQUIRES_HUMAN",
+    stepId: click.id,
+  });
+  expect(replay.actions.calls.some(({ action }) => action === "click")).toBe(false);
+});
+
+test("returns typed policy decisions for review and blocked artifacts before browser execution", async () => {
   const capability = await artifact();
   for (const riskLevel of ["review", "blocked"] as const) {
     const risky = structuredClone(capability);
@@ -201,7 +237,7 @@ test("blocks review and blocked risk artifacts before browser execution", async 
 
     await expect(replay.engine.run(risky, { memberId: "12345" })).resolves.toMatchObject({
       status: "failure",
-      code: "ACTION_FAILED",
+      code: riskLevel === "review" ? "POLICY_REQUIRES_HUMAN" : "POLICY_BLOCKED",
     });
     expect(replay.actions.calls).toHaveLength(0);
   }

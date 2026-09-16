@@ -58,8 +58,9 @@ async function main(): Promise<void> {
   const sessionControl = new SessionControl();
   const session = new BrowserSession(headed ? false : config.headless);
   const resolver = new LocatorResolver();
-  const actions = new BrowserActions(session, resolver, sessionControl);
-  const observer = new SurfaceObserver(session, sessionControl);
+  const policy = new ActionPolicy(config.allowedOrigins, config.allowedRoutes);
+  const actions = new BrowserActions(session, resolver, policy, sessionControl);
+  const observer = new SurfaceObserver(session, policy, sessionControl);
   const operatorConsole = new OperatorConsole({ session, actions, observer, resolver, sessionControl });
   const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole);
   let tracing = false;
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
       }),
       observer,
       actions,
-      new ActionPolicy(config.bankAppUrl),
+      policy,
       {
         maxSteps: config.agentMaxSteps,
         timeoutMs: config.agentTimeoutMs,

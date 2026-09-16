@@ -20,7 +20,7 @@
   ],
   "outputs": [
     {
-      "name": "currentSavingsBalance",
+      "name": "savingsBalance",
       "type": "string"
     }
   ],
@@ -65,6 +65,22 @@
       }
     },
     {
+      "id": "wait-for-view",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "link",
+          "name": "View"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "link",
+        "name": "View"
+      }
+    },
+    {
       "id": "click-view",
       "timeoutMs": 10000,
       "expected": {
@@ -77,34 +93,18 @@
       }
     },
     {
-      "id": "wait-for-savings",
-      "timeoutMs": 10000,
-      "expected": {
-        "kind": "visible",
-        "target": {
-          "role": "row",
-          "name": "Savings"
-        }
-      },
-      "action": "wait_for",
-      "target": {
-        "role": "row",
-        "name": "Savings"
-      }
-    },
-    {
-      "id": "extract-current-savings-balance",
+      "id": "extract-savings-balance",
       "timeoutMs": 10000,
       "expected": {
         "kind": "output_present",
-        "output": "currentSavingsBalance"
+        "output": "savingsBalance"
       },
       "action": "extract",
       "target": {
         "role": "row",
         "name": "Savings"
       },
-      "output": "currentSavingsBalance",
+      "output": "savingsBalance",
       "pattern": "(\\$-?[\\d,]+\\.\\d{2})"
     }
   ],
@@ -120,7 +120,7 @@
       },
       {
         "kind": "output_present",
-        "output": "currentSavingsBalance"
+        "output": "savingsBalance"
       }
     ]
   },
@@ -135,7 +135,7 @@
     "riskLevel": "safe"
   },
   "metadata": {
-    "createdAt": "2026-09-15T22:56:55.020Z",
-    "sourceRunId": "5c98cc85-8c51-492c-8b29-63a6c2967df6"
+    "createdAt": "2026-09-16T02:08:22.548Z",
+    "sourceRunId": "b7389084-a42b-437c-ae3a-bbab983a393a"
   }
 }

@@ -14,7 +14,14 @@ export interface ActionResult<T = undefined> {
   action: string;
   data?: T;
   error?: {
-    type: "ELEMENT_NOT_FOUND" | "ACTION_TIMEOUT" | "BROWSER_NOT_STARTED" | "CONTROL_VIOLATION" | "ACTION_FAILED";
+    type:
+      | "ELEMENT_NOT_FOUND"
+      | "ACTION_TIMEOUT"
+      | "BROWSER_NOT_STARTED"
+      | "CONTROL_VIOLATION"
+      | "POLICY_BLOCKED"
+      | "POLICY_REQUIRES_HUMAN"
+      | "ACTION_FAILED";
     message: string;
     screenshotPath?: string;
   };

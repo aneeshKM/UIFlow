@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { SurfaceObserver } from "../browser/SurfaceObserver.js";
+import { evidenceWriter } from "../evidence/EvidenceWriter.js";
+import { redactObservation } from "../evidence/Redactor.js";
 import type { SessionControl } from "./SessionControl.js";
 import type { OperatorConsole, OperatorConsoleResult } from "./OperatorConsole.js";
 import type {
@@ -16,13 +17,6 @@ export interface InterventionManagerOptions {
   evidenceDirectory?: string;
   now?: () => Date;
   idFactory?: () => string;
-}
-
-function redactControlValues(observation: string): string {
-  return observation.replace(
-    /(^\s*-\s+(?:textbox|combobox|spinbutton|searchbox)\b[^\n:]*:\s*)(?:"[^"\n]*"|[^\n]+)/gim,
-    '$1"[REDACTED]"',
-  );
 }
 
 export class InterventionManager implements InterventionHandler {
@@ -50,7 +44,7 @@ export class InterventionManager implements InterventionHandler {
       interventionId,
       ...details,
       currentUrl: observation.url,
-      observation: redactControlValues(observation.ariaSnapshot || observation.visibleText),
+      observation: redactObservation(observation.ariaSnapshot || observation.visibleText),
       screenshotPath: paths.beforeScreenshot,
       createdAt: this.now().toISOString(),
     };
@@ -62,8 +56,7 @@ export class InterventionManager implements InterventionHandler {
     paths: InterventionEvidencePaths = this.paths(request.interventionId),
   ): Promise<InterventionOutcome> {
     this.sessionControl.assertAutomationControl();
-    await mkdir(this.evidenceDirectory, { recursive: true });
-    await writeFile(paths.beforeScreenshot, await this.observer.captureScreenshot("AUTOMATION"));
+    await evidenceWriter.writeBinary(paths.beforeScreenshot, await this.observer.captureScreenshot("AUTOMATION"));
 
     const transferredAt = this.now().toISOString();
     this.sessionControl.giveToHuman();
@@ -74,7 +67,7 @@ export class InterventionManager implements InterventionHandler {
       consoleResult = await this.operatorConsole.run(request);
       if (paths.afterScreenshot !== undefined) {
         try {
-          await writeFile(paths.afterScreenshot, await this.observer.captureScreenshot("HUMAN"));
+          await evidenceWriter.writeBinary(paths.afterScreenshot, await this.observer.captureScreenshot("HUMAN"));
         } catch (error) {
           afterScreenshotError = error instanceof Error ? error.message : String(error);
         }
@@ -97,7 +90,7 @@ export class InterventionManager implements InterventionHandler {
       evidence,
       resolvedAt,
     };
-    await writeFile(paths.json, `${JSON.stringify({
+    await evidenceWriter.writeJson(paths.json, {
       interventionId: request.interventionId,
       runId: request.runId,
       source: request.source,
@@ -124,7 +117,7 @@ export class InterventionManager implements InterventionHandler {
       ...(consoleResult.resolution.note === undefined ? {} : { note: consoleResult.resolution.note }),
       evidence,
       ...(afterScreenshotError === undefined ? {} : { afterScreenshotError }),
-    }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    });
     return outcome;
   }
 

@@ -6,6 +6,8 @@ import type {
   LocatorHint,
 } from "../artifact/types.js";
 import type { ActionResult, LocatorSpec } from "../browser/types.js";
+import type { ActionPolicy } from "../policy/ActionPolicy.js";
+import { PolicyViolation } from "../policy/ActionPolicy.js";
 import { InputResolver, InputValidationError } from "./InputResolver.js";
 import type {
   ReplayBrowserActions,
@@ -50,6 +52,7 @@ export class StepExecutor {
     private readonly observer: ReplaySurfaceObserver,
     private readonly inputResolver: InputResolver,
     private readonly inputDefinitions: InputDefinition[],
+    private readonly policy: ActionPolicy,
   ) {}
 
   async execute(
@@ -69,29 +72,28 @@ export class StepExecutor {
           } catch {
             return this.failure(step.id, "ACTION_FAILED", `Navigation value is not a valid URL: ${value}`, value);
           }
-          if (new URL(url).origin !== new URL(baseUrl).origin) {
-            return this.failure(
-              step.id,
-              "ACTION_FAILED",
-              `Navigation outside ${new URL(baseUrl).origin} is blocked by replay policy.`,
-              new URL(baseUrl).origin,
-              new URL(url).origin,
-            );
-          }
+          this.policy.assertAllowed({ action: "navigate", destination: url });
           result = await this.executeAction(step, undefined, (timeoutMs) => this.actions.navigate(url, timeoutMs));
+          if (result.status === "success") {
+            const actualUrl = (await this.observer.observe()).url;
+            this.policy.assertUrlAllowed(actualUrl);
+          }
           break;
         }
         case "click":
+          this.policy.assertAllowed({ action: "click", target: step.target });
           result = await this.executeTargetAction(step, step.target, (target, timeoutMs) =>
             this.actions.click(target, timeoutMs));
           break;
         case "type": {
+          this.policy.assertAllowed({ action: "type", target: step.target });
           const value = this.inputResolver.resolve(step.value, inputs, this.inputDefinitions);
           result = await this.executeTargetAction(step, step.target, (target, timeoutMs) =>
             this.actions.fill(target, value, timeoutMs));
           break;
         }
         case "extract": {
+          this.policy.assertAllowed({ action: "read", target: step.target });
           const extraction = await this.executeTargetAction<string>(step, step.target, (target, timeoutMs) =>
             this.actions.readText(target, timeoutMs));
           if (extraction.status === "failure") return extraction;
@@ -126,10 +128,12 @@ export class StepExecutor {
           break;
         }
         case "wait_for":
+          this.policy.assertAllowed({ action: "wait", target: step.target });
           result = await this.executeTargetAction(step, step.target, (target, timeoutMs) =>
             this.actions.waitFor(target, "visible", timeoutMs));
           break;
         case "assert": {
+          this.policy.assertAllowed({ action: "observe" });
           const assertion = await this.evaluateCondition(step.condition, outputs, step.timeoutMs);
           if (!assertion.success) {
             return this.failure(step.id, "ACTION_FAILED", assertion.message, step.condition, assertion.observed);
@@ -150,6 +154,13 @@ export class StepExecutor {
     } catch (error) {
       if (error instanceof InputValidationError) {
         return this.failure(step.id, "INVALID_INPUT", error.message);
+      }
+      if (error instanceof PolicyViolation) {
+        return this.failure(
+          step.id,
+          error.risk === "REQUIRES_HUMAN" ? "POLICY_REQUIRES_HUMAN" : "POLICY_BLOCKED",
+          error.message,
+        );
       }
       return this.failure(
         step.id,
@@ -212,6 +223,14 @@ export class StepExecutor {
     }
     if (errorType === "ACTION_TIMEOUT") {
       return this.failure(stepId, "TIMEOUT", result.error?.message ?? "Browser action timed out.", expected);
+    }
+    if (errorType === "POLICY_BLOCKED" || errorType === "POLICY_REQUIRES_HUMAN") {
+      return this.failure(
+        stepId,
+        errorType,
+        result.error?.message ?? "Browser action was rejected by policy.",
+        expected,
+      );
     }
     return this.failure(stepId, "ACTION_FAILED", result.error?.message ?? "Browser action failed.", expected);
   }

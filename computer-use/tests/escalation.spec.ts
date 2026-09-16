@@ -18,6 +18,7 @@ import type {
   InterventionResolution,
 } from "../src/escalation/types.js";
 import { ReplayEngine } from "../src/replay/ReplayEngine.js";
+import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 import type {
   ReplayCheckpointEvaluator,
   ReplayOutcomeDetector,
@@ -125,7 +126,13 @@ function replayEngine(
     async detect() { return { status: "normal" }; },
   };
   return new ReplayEngine(
-    { stepExecutor: executor, checkpointEvaluator, outcomeDetector, interventionManager },
+    {
+      stepExecutor: executor,
+      checkpointEvaluator,
+      outcomeDetector,
+      interventionManager,
+      actionPolicy: new ActionPolicy("http://localhost:5174"),
+    },
     { runId: "replay-escalation", now: () => 100 },
   );
 }
@@ -150,7 +157,7 @@ test("BrowserActions blocks automation while the human owns the session", async 
   } as unknown as BrowserSession;
   const resolver = {} as LocatorResolver;
   const control = new SessionControl();
-  const actions = new BrowserActions(session, resolver, control);
+  const actions = new BrowserActions(session, resolver, new ActionPolicy("http://localhost:5174"), control);
   control.giveToHuman();
 
   const result = await actions.click({ strategy: "role", role: "button", name: "Search" });
@@ -167,7 +174,12 @@ test("BrowserActions blocks a human command while automation owns the session", 
       throw new Error("Browser access should have been blocked.");
     },
   } as unknown as BrowserSession;
-  const actions = new BrowserActions(session, {} as LocatorResolver, new SessionControl());
+  const actions = new BrowserActions(
+    session,
+    {} as LocatorResolver,
+    new ActionPolicy("http://localhost:5174"),
+    new SessionControl(),
+  );
 
   const result = await actions.click(
     { strategy: "role", role: "button", name: "Search" },
@@ -418,4 +430,43 @@ test("replay bounds repeated human retries", async () => {
   expect(result).toMatchObject({ status: "failure", code: "LOCATOR_NOT_FOUND", stepId: "failed" });
   expect(handler.requests).toHaveLength(3);
   expect(failedAttempts).toBe(4);
+});
+
+test("review-risk replay requires a human decision before executing steps", async () => {
+  const artifact = replayArtifact();
+  artifact.policy.riskLevel = "review";
+  const calls: string[] = [];
+  const executor: ReplayStepExecutor = {
+    async execute(step) {
+      calls.push(step.id);
+      return { status: "success" };
+    },
+  };
+  const handler = new StubInterventionHandler({ action: "STEP_COMPLETED", note: "Approved" });
+
+  const result = await replayEngine(executor, handler).run(artifact, {});
+
+  expect(result).toMatchObject({ status: "success", interventions: 1 });
+  expect(handler.requests).toHaveLength(1);
+  expect(handler.requests[0]).toMatchObject({ reason: "POLICY_BLOCKED" });
+  expect(calls).toEqual(["first", "failed", "last"]);
+});
+
+test("blocked-risk replay cannot be approved and never executes", async () => {
+  const artifact = replayArtifact();
+  artifact.policy.riskLevel = "blocked";
+  const calls: string[] = [];
+  const executor: ReplayStepExecutor = {
+    async execute(step) {
+      calls.push(step.id);
+      return { status: "success" };
+    },
+  };
+  const handler = new StubInterventionHandler({ action: "STEP_COMPLETED" });
+
+  const result = await replayEngine(executor, handler).run(artifact, {});
+
+  expect(result).toMatchObject({ status: "failure", code: "POLICY_BLOCKED" });
+  expect(handler.requests).toHaveLength(0);
+  expect(calls).toHaveLength(0);
 });

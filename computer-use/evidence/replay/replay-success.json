@@ -1,0 +1,22 @@
+{
+  "runId": "baf38893-acf7-48be-90cb-ce62106d2365",
+  "artifact": {
+    "id": "get-member-savings-balance",
+    "version": 1
+  },
+  "inputNames": [
+    "memberId"
+  ],
+  "status": "success",
+  "completedSteps": 6,
+  "outputs": {
+    "savingsBalance": "$4,281.50"
+  },
+  "durationMs": 1493,
+  "interventions": 0,
+  "evidence": {
+    "json": "evidence/replay/replay-success.json",
+    "screenshot": "evidence/replay/replay-success.png",
+    "trace": "evidence/replay/replay-success-trace.zip"
+  }
+}

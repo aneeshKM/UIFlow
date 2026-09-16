@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
+import { evidenceWriter } from "../evidence/EvidenceWriter.js";
+import { isSensitiveKey, redactObservation, redactValue } from "../evidence/Redactor.js";
 import type { ActionPolicy } from "../policy/ActionPolicy.js";
 import { PolicyViolation } from "../policy/ActionPolicy.js";
 import type {
@@ -58,33 +59,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isSensitiveKey(key: string): boolean {
-  return /password|passcode|secret|api[_-]?key|token|authorization|cookie|session[_-]?id/i.test(key);
-}
-
-function redactString(value: string): string {
-  return value
-    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
-    .replace(/(Bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, "$1[REDACTED]")
-    .replace(/((?:authorization|cookie|session[_ -]?id)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]");
-}
-
-function redactValue(value: unknown, key = ""): unknown {
-  if (isSensitiveKey(key)) return "[REDACTED]";
-  if (typeof value === "string") return redactString(value);
-  if (Array.isArray(value)) return value.map((item) => redactValue(item));
-  if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([childKey, childValue]) => [childKey, redactValue(childValue, childKey)]),
-    );
-  }
-  return value;
-}
-
 export function redactDiscoveryRun(run: DiscoveryRun): DiscoveryRun {
   const safeRun = redactValue(run) as DiscoveryRun;
   for (const step of safeRun.steps) {
     const decision = step.decision;
+    step.observation.ariaSnapshot = redactObservation(step.observation.ariaSnapshot);
+    step.observation.visibleText = redactObservation(step.observation.visibleText);
+    if (decision !== undefined) delete (decision as Partial<AgentDecision>).reason;
     const targetName = `${decision?.target?.name ?? ""} ${decision?.target?.text ?? ""}`;
     if (decision?.value !== undefined && isSensitiveKey(targetName)) {
       decision.value = "[REDACTED]";
@@ -445,16 +426,14 @@ export class DiscoveryAgent {
     state.setEvidence(evidence);
 
     try {
-      await mkdir(this.options.evidenceDirectory, { recursive: true });
-      await writeFile(evidence.screenshot, await this.observer.captureScreenshot());
+      await evidenceWriter.writeBinary(evidence.screenshot, await this.observer.captureScreenshot());
       run = state.snapshot();
-      await writeFile(evidence.json, `${JSON.stringify(redactDiscoveryRun(run), null, 2)}\n`, "utf8");
+      await evidenceWriter.writeJson(evidence.json, redactDiscoveryRun(run));
       return run;
     } catch (error) {
       run = state.finish("failure", `evidence_error: ${errorMessage(error)}`, this.now);
       try {
-        await mkdir(this.options.evidenceDirectory, { recursive: true });
-        await writeFile(evidence.json, `${JSON.stringify(redactDiscoveryRun(run), null, 2)}\n`, "utf8");
+        await evidenceWriter.writeJson(evidence.json, redactDiscoveryRun(run));
       } catch {
         // The structured return still reports the evidence failure.
       }

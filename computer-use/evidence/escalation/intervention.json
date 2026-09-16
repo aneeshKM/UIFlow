@@ -1,0 +1,45 @@
+{
+  "interventionId": "int-7951b959-ae2f-476d-ac47-81215bae328b",
+  "runId": "e9379153-ddba-4e89-ab6e-56c3960df5ad",
+  "source": "replay",
+  "capabilityId": "get-member-savings-balance",
+  "goal": "Look up member {{memberId}} and read their current savings balance",
+  "reason": "LOCATOR_NOT_FOUND",
+  "message": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '__demo_missing_click-search__' })\u001b[22m\n",
+  "stepId": "click-search",
+  "stepIndex": 2,
+  "currentUrl": "http://localhost:5174/members",
+  "observation": "- banner:\n  - heading \"Northstar Credit Union\" [level=1]\n  - paragraph: Member Servicing System\n  - text: \"User: operator01 Session: Active\"\n- navigation:\n  - link \"Home\":\n    - /url: /dashboard\n  - link \"Members\":\n    - /url: /members\n  - link \"Accounts\":\n    - /url: /accounts\n  - link \"Transactions\":\n    - /url: /transactions\n  - link \"Admin\":\n    - /url: /admin\n- main:\n  - heading \"Member Search\" [level=2]\n  - link \"Create New Member\":\n    - /url: /members/new\n    - button \"Create New Member\"\n  - text: Search Criteria Member Number\n  - textbox \"Member Number\": \"[REDACTED]\"\n  - button \"Search\"\n- contentinfo: \"System Status: Connected | Northstar Core Services\"",
+  "screenshotPath": "evidence/escalation/intervention-before.png",
+  "createdAt": "2026-09-15T22:58:15.694Z",
+  "control": {
+    "from": "AUTOMATION",
+    "to": "HUMAN",
+    "transferredAt": "2026-09-15T22:58:15.734Z",
+    "returnedTo": "AUTOMATION",
+    "returnedAt": "2026-09-15T22:58:43.079Z"
+  },
+  "humanActions": [
+    {
+      "timestamp": "2026-09-15T22:58:24.572Z",
+      "action": "observe",
+      "result": "success"
+    },
+    {
+      "timestamp": "2026-09-15T22:58:35.819Z",
+      "action": "click",
+      "target": {
+        "role": "button",
+        "name": "Search"
+      },
+      "result": "success"
+    }
+  ],
+  "resolution": "STEP_COMPLETED",
+  "resolvedAt": "2026-09-15T22:58:43.079Z",
+  "evidence": {
+    "json": "evidence/escalation/intervention.json",
+    "beforeScreenshot": "evidence/escalation/intervention-before.png",
+    "afterScreenshot": "evidence/escalation/intervention-after.png"
+  }
+}

@@ -5,6 +5,7 @@ import { LocatorResolver } from "../src/browser/LocatorResolver.js";
 import { SurfaceObserver } from "../src/browser/SurfaceObserver.js";
 import type { ActionResult } from "../src/browser/types.js";
 import { readConfig } from "../src/config.js";
+import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 
 function requireSuccess<T>(result: ActionResult<T>): T {
   if (!result.success) {
@@ -16,8 +17,9 @@ function requireSuccess<T>(result: ActionResult<T>): T {
 async function main(): Promise<void> {
   const config = readConfig();
   const session = new BrowserSession(config.headless);
-  const actions = new BrowserActions(session, new LocatorResolver());
-  const observer = new SurfaceObserver(session);
+  const policy = new ActionPolicy(config.allowedOrigins, config.allowedRoutes);
+  const actions = new BrowserActions(session, new LocatorResolver(), policy);
+  const observer = new SurfaceObserver(session, policy);
   let tracing = false;
 
   try {

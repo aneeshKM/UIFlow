@@ -248,5 +248,7 @@ test("redacts secrets before evidence is serialized", () => {
     }],
   };
 
-  expect(redactDiscoveryRun(run).steps[0]?.decision?.value).toBe("[REDACTED]");
+  const redacted = redactDiscoveryRun(run);
+  expect(redacted.steps[0]?.decision?.value).toBe("[REDACTED]");
+  expect(redacted.steps[0]?.decision).not.toHaveProperty("reason");
 });

@@ -1,0 +1,27 @@
+{
+  "runId": "8da22f9f-6acd-4078-9b2c-ccf49160077d",
+  "artifact": {
+    "id": "get-member-savings-balance",
+    "version": 1
+  },
+  "inputNames": [
+    "memberId"
+  ],
+  "status": "business_outcome",
+  "completedSteps": 3,
+  "outputs": {},
+  "durationMs": 1114,
+  "interventions": 0,
+  "evidence": {
+    "json": "evidence/replay/replay-member-not-found.json",
+    "screenshot": "evidence/replay/replay-member-not-found.png",
+    "trace": "evidence/replay/replay-member-not-found-trace.zip"
+  },
+  "businessOutcome": {
+    "code": "MEMBER_NOT_FOUND",
+    "stepId": "click-search",
+    "details": {
+      "message": "No member found for ID 99999"
+    }
+  }
+}

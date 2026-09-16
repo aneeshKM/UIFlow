@@ -6,6 +6,8 @@ import type {
   InterventionOutcome,
   InterventionReason,
 } from "../escalation/types.js";
+import type { ActionPolicy } from "../policy/ActionPolicy.js";
+import { PolicyViolation } from "../policy/ActionPolicy.js";
 import { InputResolver, InputValidationError } from "./InputResolver.js";
 import type {
   ReplayCheckpointEvaluator,
@@ -32,6 +34,7 @@ export interface ReplayEngineDependencies {
   outcomeDetector: ReplayOutcomeDetector;
   inputResolver?: InputResolver;
   artifactValidator?: ArtifactValidator;
+  actionPolicy: ActionPolicy;
   interventionManager?: import("./types.js").ReplayInterventionHandler;
 }
 
@@ -76,11 +79,24 @@ export class ReplayEngine {
       );
     }
 
-    if (artifact.policy.riskLevel === "blocked") {
-      return this.failure("ACTION_FAILED", "Replay policy blocks this capability artifact.");
+    try {
+      this.dependencies.actionPolicy.assertOriginAllowed(artifact.target.baseUrl);
+    } catch (error) {
+      return this.failure(
+        "POLICY_BLOCKED",
+        error instanceof PolicyViolation ? error.message : `Target policy validation failed: ${String(error)}`,
+      );
     }
-    if (artifact.policy.riskLevel === "review" && this.options.allowReviewRisk !== true) {
-      return this.failure("ACTION_FAILED", "Replay policy requires explicit approval for this capability artifact.");
+
+    const riskDecision = this.dependencies.actionPolicy.evaluateArtifactRisk(artifact.policy.riskLevel);
+    if (!riskDecision.allowed && riskDecision.risk === "BLOCKED") {
+      return this.failure("POLICY_BLOCKED", riskDecision.reason);
+    }
+    const needsRiskApproval = !riskDecision.allowed
+      && riskDecision.risk === "REQUIRES_HUMAN"
+      && this.options.allowReviewRisk !== true;
+    if (needsRiskApproval && this.dependencies.interventionManager === undefined) {
+      return this.failure("POLICY_REQUIRES_HUMAN", riskDecision.reason);
     }
 
     try {
@@ -95,6 +111,24 @@ export class ReplayEngine {
     const outputs: RuntimeOutputs = {};
     let completedSteps = 0;
     let interventions = 0;
+
+    if (needsRiskApproval) {
+      const approvalFailure = this.failure("POLICY_REQUIRES_HUMAN", riskDecision.reason);
+      const intervention = await this.intervene(approvalFailure, {
+        runId,
+        source: "replay",
+        capabilityId: artifact.capability.id,
+        goal: artifact.capability.description,
+        reason: "POLICY_BLOCKED",
+        message: riskDecision.reason,
+      });
+      if (intervention === undefined) return approvalFailure;
+      if ("status" in intervention) return intervention;
+      interventions += 1;
+      if (intervention.resolution.action === "ABORT") {
+        return this.humanAborted(undefined, intervention.resolution.note, interventions);
+      }
+    }
 
     for (const [stepIndex, step] of artifact.steps.entries()) {
       let stepComplete = false;
@@ -238,6 +272,9 @@ export class ReplayEngine {
         return "CHECKPOINT_FAILED";
       case "TIMEOUT":
         return "RETRIES_EXHAUSTED";
+      case "POLICY_REQUIRES_HUMAN":
+        return "POLICY_BLOCKED";
+      case "POLICY_BLOCKED":
       case "INVALID_INPUT":
       case "ACTION_FAILED":
       case "HUMAN_ABORTED":

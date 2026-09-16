@@ -4,6 +4,8 @@ import { z } from "zod";
 const environmentSchema = z.object({
   BANK_APP_URL: z.url().default("http://localhost:5174"),
   BANK_API_URL: z.url().default("http://localhost:8001"),
+  ALLOWED_ORIGINS: z.string().trim().default(""),
+  ALLOWED_ROUTES: z.string().trim().default("/login,/dashboard,/members"),
   HEADLESS: z.enum(["true", "false"]).default("false"),
   OPENAI_API_KEY: z.string().trim().default(""),
   OPENAI_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),
@@ -14,6 +16,8 @@ const environmentSchema = z.object({
 export interface AppConfig {
   bankAppUrl: string;
   bankApiUrl: string;
+  allowedOrigins: string[];
+  allowedRoutes: string[];
   headless: boolean;
   openaiApiKey: string;
   openaiModel: string;
@@ -27,9 +31,19 @@ export interface DiscoveryConfig extends AppConfig {
 
 export function readConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
   const values = environmentSchema.parse(environment);
+  const allowedOrigins = (values.ALLOWED_ORIGINS || values.BANK_APP_URL)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const allowedRoutes = values.ALLOWED_ROUTES
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   return {
     bankAppUrl: values.BANK_APP_URL,
     bankApiUrl: values.BANK_API_URL,
+    allowedOrigins,
+    allowedRoutes,
     headless: values.HEADLESS === "true",
     openaiApiKey: values.OPENAI_API_KEY,
     openaiModel: values.OPENAI_MODEL,

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { ArtifactValidator } from "../src/artifact/ArtifactValidator.js";
 import type { CapabilityArtifact } from "../src/artifact/types.js";
@@ -13,6 +13,8 @@ import { readConfig } from "../src/config.js";
 import { InterventionManager } from "../src/escalation/InterventionManager.js";
 import { OperatorConsole } from "../src/escalation/OperatorConsole.js";
 import { SessionControl } from "../src/escalation/SessionControl.js";
+import { evidenceWriter } from "../src/evidence/EvidenceWriter.js";
+import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 import { CheckpointEvaluator } from "../src/replay/CheckpointEvaluator.js";
 import { InputResolver } from "../src/replay/InputResolver.js";
 import { OutcomeDetector } from "../src/replay/OutcomeDetector.js";
@@ -96,6 +98,7 @@ function evidenceRecord(
   completedSteps: number,
   outputs: RuntimeOutputs,
   durationMs: number,
+  evidence: { json: string; screenshot: string; trace: string },
 ): Record<string, unknown> {
   return {
     runId,
@@ -106,6 +109,7 @@ function evidenceRecord(
     outputs,
     durationMs,
     interventions: "interventions" in result ? result.interventions ?? 0 : 0,
+    evidence,
     ...(result.status === "business_outcome"
       ? { businessOutcome: { code: result.code, stepId: result.stepId, details: result.details } }
       : {}),
@@ -140,8 +144,9 @@ async function main(): Promise<void> {
   const sessionControl = new SessionControl();
   const session = new BrowserSession(headed ? false : config.headless);
   const resolver = new LocatorResolver();
-  const actions = new BrowserActions(session, resolver, sessionControl);
-  const observer = new SurfaceObserver(session, sessionControl);
+  const policy = new ActionPolicy(config.allowedOrigins, config.allowedRoutes);
+  const actions = new BrowserActions(session, resolver, policy, sessionControl);
+  const observer = new SurfaceObserver(session, policy, sessionControl);
   const operatorConsole = new OperatorConsole({ session, actions, observer, resolver, sessionControl });
   const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole);
   const inputResolver = new InputResolver();
@@ -151,7 +156,7 @@ async function main(): Promise<void> {
   let outputs: RuntimeOutputs = {};
   const startedAt = performance.now();
 
-  const browserStepExecutor = new StepExecutor(actions, observer, inputResolver, artifact.inputs);
+  const browserStepExecutor = new StepExecutor(actions, observer, inputResolver, artifact.inputs, policy);
   let demoFailureInjected = false;
   const stepExecutor: ReplayStepExecutor = {
     async execute(step, runtimeInputs, runtimeOutputs, baseUrl) {
@@ -173,6 +178,7 @@ async function main(): Promise<void> {
       checkpointEvaluator: new CheckpointEvaluator(actions, observer),
       outcomeDetector: new OutcomeDetector(observer, actions),
       inputResolver,
+      actionPolicy: policy,
       ...(headed ? { interventionManager } : {}),
     },
     {
@@ -212,11 +218,10 @@ async function main(): Promise<void> {
       completedSteps = result.completedSteps;
       outputs = result.outputs;
     }
-    await mkdir(evidenceDirectory, { recursive: true });
     const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
-    await writeFile(
+    await evidenceWriter.writeJson(
       jsonPath,
-      `${JSON.stringify(evidenceRecord(
+      evidenceRecord(
         artifact,
         inputs,
         runId,
@@ -224,8 +229,8 @@ async function main(): Promise<void> {
         completedSteps,
         outputs,
         durationMs,
-      ), null, 2)}\n`,
-      { encoding: "utf8", mode: 0o600 },
+        { json: jsonPath, screenshot: screenshotPath, trace: tracePath },
+      ),
     );
 
     console.log(JSON.stringify(result, null, 2));

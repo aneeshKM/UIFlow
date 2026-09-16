@@ -5,6 +5,7 @@ import { BrowserSession } from "../src/browser/BrowserSession.js";
 import { LocatorResolver } from "../src/browser/LocatorResolver.js";
 import { SurfaceObserver } from "../src/browser/SurfaceObserver.js";
 import { readConfig } from "../src/config.js";
+import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 
 const config = readConfig();
 let session: BrowserSession;
@@ -25,8 +26,9 @@ test.beforeAll(async () => {
 test.beforeEach(async () => {
   session = new BrowserSession(true);
   await session.start();
-  actions = new BrowserActions(session, new LocatorResolver());
-  observer = new SurfaceObserver(session);
+  const policy = new ActionPolicy(config.allowedOrigins, config.allowedRoutes);
+  actions = new BrowserActions(session, new LocatorResolver(), policy);
+  observer = new SurfaceObserver(session, policy);
 });
 
 test.afterEach(async () => {
