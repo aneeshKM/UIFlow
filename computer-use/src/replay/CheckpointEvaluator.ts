@@ -27,6 +27,7 @@ export class CheckpointEvaluator {
   constructor(
     private readonly actions: ReplayBrowserActions,
     private readonly observer: ReplaySurfaceObserver,
+    private readonly timeoutMs = 10_000,
   ) {}
 
   async evaluate(checkpoint: Checkpoint, outputs: RuntimeOutputs): Promise<CheckpointResult> {
@@ -77,7 +78,7 @@ export class CheckpointEvaluator {
 
     const { fallbacks = [], ...primary } = condition.target;
     for (const hint of [primary as LocatorHint, ...fallbacks]) {
-      const result = await this.actions.isVisible(toLocatorSpec(hint));
+      const result = await this.actions.isVisible(toLocatorSpec(hint), this.timeoutMs);
       if (result.success && result.data === true) return { success: true };
     }
     return {
@@ -88,4 +89,3 @@ export class CheckpointEvaluator {
     };
   }
 }
-

@@ -3,6 +3,7 @@ import type { AgentDecision, AgentTarget } from "../agent/types.js";
 const TARGET_ACTIONS = new Set(["click", "type", "read"]);
 const RISKY_CONTROL = /\b(delete|remove|transfer|payment|close account|create|open new|submit|confirm)\b/i;
 const OUTPUT_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const MAX_EXTRACTION_PATTERN_LENGTH = 200;
 
 export class PolicyViolation extends Error {
   constructor(message: string) {
@@ -38,10 +39,23 @@ export class ActionPolicy {
           throw new PolicyViolation("Type requires a non-empty value.");
         }
         if (decision.value.length > 1_000) throw new PolicyViolation("Type value exceeds the policy limit.");
+        if (decision.inputName === undefined || !OUTPUT_NAME.test(decision.inputName)) {
+          throw new PolicyViolation("Type requires a stable camelCase inputName.");
+        }
         return;
       case "read":
         if (decision.outputName === undefined || !OUTPUT_NAME.test(decision.outputName)) {
           throw new PolicyViolation("Read requires a stable camelCase outputName.");
+        }
+        if (decision.extractionPattern !== undefined) {
+          if (decision.extractionPattern.length > MAX_EXTRACTION_PATTERN_LENGTH) {
+            throw new PolicyViolation("Read extractionPattern exceeds the policy limit.");
+          }
+          try {
+            new RegExp(decision.extractionPattern);
+          } catch {
+            throw new PolicyViolation("Read extractionPattern must be a valid regular expression.");
+          }
         }
         return;
       case "navigate": {

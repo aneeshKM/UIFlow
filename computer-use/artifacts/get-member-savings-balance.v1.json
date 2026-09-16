@@ -2,8 +2,8 @@
   "schemaVersion": "1.0.0",
   "capability": {
     "id": "get-member-savings-balance",
-    "name": "Get member savings balance",
-    "description": "Look up member {{memberId}} and read their current savings balance.",
+    "name": "Get Member Savings Balance",
+    "description": "Look up member {{memberId}} and read their current savings balance",
     "version": 1
   },
   "target": {
@@ -65,22 +65,6 @@
       }
     },
     {
-      "id": "wait-for-view",
-      "timeoutMs": 10000,
-      "expected": {
-        "kind": "visible",
-        "target": {
-          "role": "link",
-          "name": "View"
-        }
-      },
-      "action": "wait_for",
-      "target": {
-        "role": "link",
-        "name": "View"
-      }
-    },
-    {
       "id": "click-view",
       "timeoutMs": 10000,
       "expected": {
@@ -90,6 +74,22 @@
       "target": {
         "role": "link",
         "name": "View"
+      }
+    },
+    {
+      "id": "wait-for-savings",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "visible",
+        "target": {
+          "role": "row",
+          "name": "Savings"
+        }
+      },
+      "action": "wait_for",
+      "target": {
+        "role": "row",
+        "name": "Savings"
       }
     },
     {
@@ -105,7 +105,7 @@
         "name": "Savings"
       },
       "output": "currentSavingsBalance",
-      "pattern": "\\$-?[0-9,]+\\.[0-9]{2}"
+      "pattern": "(\\$-?[\\d,]+\\.\\d{2})"
     }
   ],
   "checkpoint": {
@@ -135,7 +135,7 @@
     "riskLevel": "safe"
   },
   "metadata": {
-    "createdAt": "2026-09-15T21:52:18.926Z",
-    "sourceRunId": "e9f7f828-15b2-4651-bbc7-2326bb42b33c"
+    "createdAt": "2026-09-15T22:56:55.020Z",
+    "sourceRunId": "5c98cc85-8c51-492c-8b29-63a6c2967df6"
   }
 }

@@ -16,7 +16,9 @@ export interface AgentDecision {
   action: AgentActionType;
   target?: AgentTarget;
   value?: string;
+  inputName?: string;
   outputName?: string;
+  extractionPattern?: string;
   reason: string;
   result?: Record<string, string>;
 }
@@ -55,6 +57,7 @@ export interface DiscoveryRun {
   outputs?: Record<string, string>;
   stopReason?: string;
   evidence?: DiscoveryEvidencePaths;
+  interventions?: number;
 }
 
 export interface AgentDecisionContext {

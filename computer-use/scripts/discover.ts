@@ -8,6 +8,9 @@ import { LocatorResolver } from "../src/browser/LocatorResolver.js";
 import { SurfaceObserver } from "../src/browser/SurfaceObserver.js";
 import type { ActionResult } from "../src/browser/types.js";
 import { readDiscoveryConfig } from "../src/config.js";
+import { InterventionManager } from "../src/escalation/InterventionManager.js";
+import { OperatorConsole } from "../src/escalation/OperatorConsole.js";
+import { SessionControl } from "../src/escalation/SessionControl.js";
 import { OpenAIModel } from "../src/llm/OpenAIModel.js";
 import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 
@@ -43,16 +46,22 @@ function printStep(step: AgentStep): void {
 }
 
 async function main(): Promise<void> {
-  const goal = process.argv.slice(2).join(" ").trim();
-  if (!goal) throw new Error("Usage: npm run discover -- \"<goal>\"");
+  const argumentsAfterCommand = process.argv.slice(2);
+  const headed = argumentsAfterCommand.includes("--headed");
+  const goal = argumentsAfterCommand.filter((argument) => argument !== "--headed").join(" ").trim();
+  if (!goal) throw new Error("Usage: npm run discover -- [--headed] \"<goal>\"");
 
   const config = readDiscoveryConfig();
   const runId = randomUUID();
   const evidenceDirectory = join("evidence", "discovery");
   const tracePath = join(evidenceDirectory, `discovery-${runId}-trace.zip`);
-  const session = new BrowserSession(config.headless);
-  const actions = new BrowserActions(session, new LocatorResolver());
-  const observer = new SurfaceObserver(session);
+  const sessionControl = new SessionControl();
+  const session = new BrowserSession(headed ? false : config.headless);
+  const resolver = new LocatorResolver();
+  const actions = new BrowserActions(session, resolver, sessionControl);
+  const observer = new SurfaceObserver(session, sessionControl);
+  const operatorConsole = new OperatorConsole({ session, actions, observer, resolver, sessionControl });
+  const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole);
   let tracing = false;
 
   console.log("Discovery started");
@@ -80,6 +89,7 @@ async function main(): Promise<void> {
         evidenceDirectory,
         tracePath,
         onStep: printStep,
+        interventionManager,
       },
     );
 

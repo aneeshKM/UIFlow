@@ -7,5 +7,7 @@ evidence/discovery/*
 !evidence/discovery/.gitkeep
 evidence/replay/*
 !evidence/replay/.gitkeep
+evidence/escalation/*
+!evidence/escalation/.gitkeep
 test-results/
 playwright-report/

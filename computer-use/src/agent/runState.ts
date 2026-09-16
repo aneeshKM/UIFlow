@@ -21,6 +21,7 @@ export class DiscoveryRunState {
   private evidence?: DiscoveryEvidencePaths;
   private previousDecision?: AgentDecision;
   private previousResult?: ActionExecutionResult;
+  private interventions = 0;
 
   constructor(goal: string, runId: string = randomUUID(), now: () => Date = () => new Date()) {
     this.runId = runId;
@@ -42,6 +43,10 @@ export class DiscoveryRunState {
 
   get extractedOutputs(): Record<string, string> {
     return { ...this.outputs };
+  }
+
+  get interventionCount(): number {
+    return this.interventions;
   }
 
   recordObservation(observation: SurfaceObservation): AgentStep {
@@ -76,6 +81,10 @@ export class DiscoveryRunState {
     this.evidence = evidence;
   }
 
+  recordIntervention(): void {
+    this.interventions += 1;
+  }
+
   finish(status: Exclude<AgentRunStatus, "running">, reason: string | undefined, now: () => Date): DiscoveryRun {
     this.status = status;
     this.stopReason = reason;
@@ -94,6 +103,7 @@ export class DiscoveryRunState {
       ...(Object.keys(this.outputs).length === 0 ? {} : { outputs: { ...this.outputs } }),
       ...(this.stopReason === undefined ? {} : { stopReason: this.stopReason }),
       ...(this.evidence === undefined ? {} : { evidence: { ...this.evidence } }),
+      ...(this.interventions === 0 ? {} : { interventions: this.interventions }),
     };
   }
 }

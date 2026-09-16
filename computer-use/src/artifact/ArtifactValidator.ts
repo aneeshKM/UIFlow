@@ -97,6 +97,13 @@ export class ArtifactValidator {
       if (step.action === "extract" && !outputNames.has(step.output)) {
         issues.push(`steps.${index}.output: unknown output "${step.output}"`);
       }
+      if (step.action === "extract" && step.pattern !== undefined) {
+        try {
+          new RegExp(step.pattern);
+        } catch {
+          issues.push(`steps.${index}.pattern: must be a valid regular expression`);
+        }
+      }
       const expectedOutput = collectConditionOutput(step.expected);
       if (expectedOutput !== undefined && !outputNames.has(expectedOutput)) {
         issues.push(`steps.${index}.expected.output: unknown output "${expectedOutput}"`);

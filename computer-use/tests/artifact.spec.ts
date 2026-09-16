@@ -43,6 +43,7 @@ function successfulRun(): DiscoveryRun {
           action: "type",
           target: { role: "textbox", name: "Member Number" },
           value: "12345",
+          inputName: "memberId",
           reason: "Enter the requested member number.",
         },
         result: { success: true, action: "type" },
@@ -81,14 +82,27 @@ function successfulRun(): DiscoveryRun {
         url: member.url,
         observation: member,
         decision: {
+          action: "read",
+          target: { role: "row", name: "Savings" },
+          outputName: "currentSavingsBalance",
+          extractionPattern: "\\$-?[0-9,]+\\.[0-9]{2}",
+          reason: "Read the requested balance.",
+        },
+        result: { success: true, action: "read", value: "$4,281.50" },
+      },
+      {
+        step: 6,
+        url: member.url,
+        observation: member,
+        decision: {
           action: "finish",
           reason: "The savings balance is $4,281.50.",
-          result: { memberId: "12345", currentSavingsBalance: "$4,281.50" },
+          result: { currentSavingsBalance: "$4,281.50" },
         },
         result: { success: true, action: "finish" },
       },
     ],
-    outputs: { memberId: "12345", currentSavingsBalance: "$4,281.50" },
+    outputs: { currentSavingsBalance: "$4,281.50" },
   };
 }
 
@@ -115,6 +129,7 @@ test("builds a validated, parameterized artifact from a successful discovery", (
     action: "extract",
     target: { role: "row", name: "Savings" },
     output: "currentSavingsBalance",
+    pattern: "\\$-?[0-9,]+\\.[0-9]{2}",
   }));
   expect(artifact.checkpoint.conditions).toContainEqual({
     kind: "output_present",
@@ -140,6 +155,54 @@ test("refuses to build from an unsuccessful discovery", () => {
   expect(() => new ArtifactBuilder().build(run)).toThrow("Cannot build an artifact from a failure discovery run");
 });
 
+test("fails instead of guessing an extraction for an undeclared finish output", () => {
+  const run = successfulRun();
+  run.outputs = { currentSavingsBalance: "$4,281.50", guessedValue: "unverified" };
+
+  expect(() => new ArtifactBuilder().build(run)).toThrow(
+    'Output "guessedValue" has no successful structured read extraction',
+  );
+});
+
+test("rejects a locator that persists the discovery-time output value", () => {
+  const run = successfulRun();
+  const read = run.steps.find((step) => step.decision?.action === "read")!;
+  read.decision!.target = { role: "cell", name: "$4,281.50", text: "$4,281.50" };
+
+  expect(() => new ArtifactBuilder().build(run)).toThrow(
+    "discovery-time runtime value instead of a stable label",
+  );
+});
+
+test("reduces a value-bearing row name to its stable semantic prefix", () => {
+  const run = successfulRun();
+  const read = run.steps.find((step) => step.decision?.action === "read")!;
+  read.decision!.target = { role: "row", name: "Savings ****4521 $4,281.50 Open View" };
+
+  const artifact = new ArtifactBuilder({ now: () => new Date(timestamp) }).build(run);
+
+  expect(artifact.steps).toContainEqual(expect.objectContaining({
+    action: "extract",
+    target: { role: "row", name: "Savings" },
+  }));
+});
+
+test("rejects extraction patterns copied from discovery-time numeric values", () => {
+  const run = successfulRun();
+  const read = run.steps.find((step) => step.decision?.action === "read")!;
+  read.decision!.extractionPattern = "(\\$4,281\\.50)";
+
+  expect(() => new ArtifactBuilder().build(run)).toThrow("contains a copied literal value");
+});
+
+test("builds the same executable flow from the same discovery run", () => {
+  const first = new ArtifactBuilder({ now: () => new Date("2026-09-15T12:00:00.000Z") }).build(successfulRun());
+  const second = new ArtifactBuilder({ now: () => new Date("2026-09-16T12:00:00.000Z") }).build(successfulRun());
+
+  expect({ ...first, metadata: undefined }).toEqual({ ...second, metadata: undefined });
+  expect(first.metadata.sourceRunId).toBe(second.metadata.sourceRunId);
+});
+
 test("rejects invalid references and undeclared actions before storage", () => {
   const artifact = new ArtifactBuilder({ now: () => new Date(timestamp) }).build(successfulRun());
   const invalid = structuredClone(artifact) as CapabilityArtifact;
@@ -161,6 +224,23 @@ test("saves, lists, loads, and validates JSON artifacts", async () => {
     expect(await store.list()).toEqual(["get-member-savings-balance.v1.json"]);
     expect(await store.load("get-member-savings-balance.v1.json")).toEqual(artifact);
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual(artifact);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("does not replace a valid artifact when a later save fails validation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "capability-artifacts-"));
+  try {
+    const artifact = new ArtifactBuilder({ now: () => new Date(timestamp) }).build(successfulRun());
+    const store = new ArtifactStore(directory);
+    const path = await store.save(artifact);
+    const before = await readFile(path, "utf8");
+    const invalid = structuredClone(artifact) as CapabilityArtifact;
+    invalid.steps[0]!.timeoutMs = 0;
+
+    await expect(store.save(invalid)).rejects.toThrow(ArtifactValidationError);
+    expect(await readFile(path, "utf8")).toBe(before);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

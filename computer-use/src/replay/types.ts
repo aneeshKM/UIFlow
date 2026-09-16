@@ -4,6 +4,7 @@ import type {
   CheckpointCondition,
 } from "../artifact/types.js";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
+import type { InterventionHandler } from "../escalation/types.js";
 
 export type ReplayStatus = "success" | "business_outcome" | "failure";
 
@@ -18,6 +19,7 @@ export interface ReplaySuccess {
   outputs: RuntimeOutputs;
   completedSteps: number;
   durationMs: number;
+  interventions?: number;
 }
 
 export interface ReplayBusinessOutcome {
@@ -34,7 +36,8 @@ export type ReplayFailureCode =
   | "CHECKPOINT_FAILED"
   | "TIMEOUT"
   | "SESSION_EXPIRED"
-  | "UNEXPECTED_STATE";
+  | "UNEXPECTED_STATE"
+  | "HUMAN_ABORTED";
 
 export interface ReplayFailure {
   status: "failure";
@@ -43,6 +46,7 @@ export interface ReplayFailure {
   expected?: unknown;
   observed?: unknown;
   message: string;
+  interventions?: number;
 }
 
 export type ReplayResult = ReplaySuccess | ReplayBusinessOutcome | ReplayFailure;
@@ -105,3 +109,4 @@ export interface ReplayOutcomeDetector {
   detect(): Promise<OutcomeDetectionResult>;
 }
 
+export type ReplayInterventionHandler = InterventionHandler;

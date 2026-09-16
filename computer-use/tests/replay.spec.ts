@@ -122,7 +122,7 @@ test("executes artifact steps in order and injects the runtime memberId", async 
   expect(result.status).toBe("success");
   expect(actions.calls.filter(({ action }) =>
     ["navigate", "fill", "click", "waitFor", "readText"].includes(action)).map(({ action }) => action))
-    .toEqual(["navigate", "fill", "click", "waitFor", "click", "readText"]);
+    .toEqual(["navigate", "fill", "click", "click", "waitFor", "readText"]);
   expect(actions.calls).toContainEqual(expect.objectContaining({
     action: "fill",
     value: "12345",
@@ -162,6 +162,49 @@ test("rejects missing and unknown runtime inputs before browser execution", asyn
   });
   expect(missing.actions.calls).toHaveLength(0);
   expect(unknown.actions.calls).toHaveLength(0);
+});
+
+test("rejects a runtime input with the wrong type before browser execution", async () => {
+  const capability = await artifact();
+  const replay = createEngine(capability);
+
+  await expect(replay.engine.run(capability, { memberId: 12345 })).resolves.toMatchObject({
+    status: "failure",
+    code: "INVALID_INPUT",
+  });
+  expect(replay.actions.calls).toHaveLength(0);
+});
+
+test("blocks artifact navigation to an external origin", async () => {
+  const capability = await artifact();
+  const external = structuredClone(capability);
+  const navigate = external.steps.find((step) => step.action === "navigate");
+  if (navigate?.action !== "navigate") throw new Error("Expected navigate step");
+  navigate.value = { literal: "https://example.com/collect" };
+  const replay = createEngine(external);
+
+  await expect(replay.engine.run(external, { memberId: "12345" })).resolves.toMatchObject({
+    status: "failure",
+    code: "ACTION_FAILED",
+    stepId: "navigate-members",
+    message: /outside http:\/\/localhost:5174 is blocked/,
+  });
+  expect(replay.actions.calls).toHaveLength(0);
+});
+
+test("blocks review and blocked risk artifacts before browser execution", async () => {
+  const capability = await artifact();
+  for (const riskLevel of ["review", "blocked"] as const) {
+    const risky = structuredClone(capability);
+    risky.policy.riskLevel = riskLevel;
+    const replay = createEngine(risky);
+
+    await expect(replay.engine.run(risky, { memberId: "12345" })).resolves.toMatchObject({
+      status: "failure",
+      code: "ACTION_FAILED",
+    });
+    expect(replay.actions.calls).toHaveLength(0);
+  }
 });
 
 test("returns CHECKPOINT_FAILED when execution does not produce the declared output", async () => {
@@ -213,4 +256,3 @@ test("replay source has no discovery or model dependency", async () => {
 
   expect(source).not.toMatch(/OpenAIModel|DiscoveryAgent|prompt\.js|\/llm\//);
 });
-

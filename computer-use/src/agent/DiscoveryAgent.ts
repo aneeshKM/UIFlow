@@ -3,6 +3,11 @@ import { join } from "node:path";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
 import type { ActionPolicy } from "../policy/ActionPolicy.js";
 import { PolicyViolation } from "../policy/ActionPolicy.js";
+import type {
+  InterventionDetails,
+  InterventionHandler,
+  InterventionReason,
+} from "../escalation/types.js";
 import { DiscoveryRunState } from "./runState.js";
 import type {
   ActionExecutionResult,
@@ -38,6 +43,8 @@ export interface DiscoveryAgentOptions {
   waitDurationMs?: number;
   onStep?: (step: AgentStep) => void | Promise<void>;
   now?: () => Date;
+  interventionManager?: InterventionHandler;
+  maxInterventions?: number;
 }
 
 class DiscoveryTimeoutError extends Error {
@@ -142,6 +149,10 @@ export class DiscoveryAgent {
     if (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 1) {
       throw new Error("timeoutMs must be positive.");
     }
+    if (options.maxInterventions !== undefined
+      && (!Number.isInteger(options.maxInterventions) || options.maxInterventions < 0)) {
+      throw new Error("maxInterventions must be a non-negative integer.");
+    }
     this.now = options.now ?? (() => new Date());
   }
 
@@ -150,16 +161,69 @@ export class DiscoveryAgent {
     if (!trimmedGoal) throw new Error("Discovery goal must not be empty.");
 
     const state = new DiscoveryRunState(trimmedGoal, this.options.runId, this.now);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
-    timeout.unref();
+    let controller = new AbortController();
+    let timeout = this.startTimeout(controller);
+    let stepLimit = this.options.maxSteps;
+
+    const intervene = async (
+      reason: InterventionReason,
+      message: string,
+      stepId?: string,
+      stepIndex?: number,
+    ): Promise<"resume" | "abort" | "unavailable" | "error"> => {
+      if (this.options.interventionManager === undefined) return "unavailable";
+      if (state.interventionCount >= (this.options.maxInterventions ?? 3)) return "unavailable";
+      clearTimeout(timeout);
+      controller.abort();
+      const details: InterventionDetails = {
+        runId: state.runId,
+        source: "discovery",
+        goal: trimmedGoal,
+        ...(stepId === undefined ? {} : { stepId }),
+        ...(stepIndex === undefined ? {} : { stepIndex }),
+        reason,
+        message,
+      };
+      try {
+        const outcome = await this.options.interventionManager.requestIntervention(details);
+        state.recordIntervention();
+        if (outcome.resolution.action === "ABORT") return "abort";
+        controller = new AbortController();
+        timeout = this.startTimeout(controller);
+        return "resume";
+      } catch {
+        return "error";
+      }
+    };
 
     try {
-      while (state.currentStep < this.options.maxSteps) {
+      for (;;) {
+        if (state.currentStep >= stepLimit) {
+          const resolution = await intervene(
+            "AGENT_STUCK",
+            `Discovery reached its ${this.options.maxSteps}-step limit without finishing.`,
+            undefined,
+            state.currentStep,
+          );
+          if (resolution === "resume") {
+            stepLimit += this.options.maxSteps;
+            continue;
+          }
+          if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+          if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+          return this.complete(state, "stopped", "max_steps");
+        }
+
         let observation: SurfaceObservation;
         try {
           observation = await withAbort(this.observer.observe(), controller.signal);
         } catch (error) {
+          if (error instanceof DiscoveryTimeoutError || controller.signal.aborted) {
+            const resolution = await intervene("AGENT_TIMEOUT", "Discovery timed out while observing the browser.");
+            if (resolution === "resume") continue;
+            if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+            if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+          }
           return this.complete(
             state,
             error instanceof DiscoveryTimeoutError ? "stopped" : "failure",
@@ -181,6 +245,27 @@ export class DiscoveryAgent {
             signal: controller.signal,
           }), controller.signal);
         } catch (error) {
+          if (error instanceof DiscoveryTimeoutError || controller.signal.aborted) {
+            const resolution = await intervene(
+              "AGENT_TIMEOUT",
+              "Discovery timed out while waiting for the model.",
+              undefined,
+              step.step,
+            );
+            if (resolution === "resume") continue;
+            if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+            if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+          } else {
+            const resolution = await intervene(
+              "AGENT_STUCK",
+              `The discovery model failed: ${errorMessage(error)}`,
+              undefined,
+              step.step,
+            );
+            if (resolution === "resume") continue;
+            if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+            if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+          }
           return this.complete(
             state,
             error instanceof DiscoveryTimeoutError || controller.signal.aborted ? "stopped" : "failure",
@@ -204,14 +289,55 @@ export class DiscoveryAgent {
           };
           state.recordResult(step, result);
           await this.reportStep(step);
+          const resolution = await intervene(
+            "POLICY_BLOCKED",
+            result.error?.message ?? "The action policy blocked discovery.",
+            undefined,
+            step.step,
+          );
+          if (resolution === "resume") continue;
+          if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+          if (resolution === "error") return this.complete(state, "failure", "intervention_error");
           return this.complete(state, "failure", `policy_rejected: ${result.error?.message}`);
         }
 
         let result: ActionExecutionResult;
+        if (decision.action === "finish") {
+          const extractedOutputs = state.extractedOutputs;
+          const finalOutputs = decision.result ?? {};
+          const unverified = Object.entries(finalOutputs)
+            .filter(([name, value]) => extractedOutputs[name] !== value)
+            .map(([name]) => name);
+          const omitted = Object.keys(extractedOutputs)
+            .filter((name) => !Object.prototype.hasOwnProperty.call(finalOutputs, name));
+          if (unverified.length > 0 || omitted.length > 0) {
+            const message = `Finish must return exactly the verified extracted outputs. Unverified: ${unverified.join(", ") || "none"}; omitted: ${omitted.join(", ") || "none"}.`;
+            result = {
+              success: false,
+              action: "finish",
+              error: {
+                type: "UNVERIFIED_OUTPUT",
+                message,
+              },
+            };
+            state.recordResult(step, result);
+            await this.reportStep(step);
+            return this.complete(state, "failure", `unverified_output: ${message}`);
+          }
+        }
         try {
           result = await withAbort(this.execute(decision, observation.url), controller.signal);
         } catch (error) {
           if (error instanceof DiscoveryTimeoutError || controller.signal.aborted) {
+            const resolution = await intervene(
+              "AGENT_TIMEOUT",
+              "Discovery timed out while executing a browser action.",
+              undefined,
+              step.step,
+            );
+            if (resolution === "resume") continue;
+            if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+            if (resolution === "error") return this.complete(state, "failure", "intervention_error");
             return this.complete(state, "stopped", "timeout");
           }
           result = {
@@ -229,13 +355,28 @@ export class DiscoveryAgent {
         await this.reportStep(step);
 
         if (decision.action === "finish") return this.complete(state, "success", undefined);
-        if (decision.action === "fail") return this.complete(state, "failure", `model_failed: ${decision.reason}`);
+        if (decision.action === "fail") {
+          const resolution = await intervene(
+            "AGENT_STUCK",
+            `The discovery model stopped: ${decision.reason}`,
+            undefined,
+            step.step,
+          );
+          if (resolution === "resume") continue;
+          if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+          if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+          return this.complete(state, "failure", `model_failed: ${decision.reason}`);
+        }
       }
-
-      return this.complete(state, "stopped", "max_steps");
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private startTimeout(controller: AbortController): NodeJS.Timeout {
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    timeout.unref();
+    return timeout;
   }
 
   private async execute(decision: AgentDecision, currentUrl: string): Promise<ActionExecutionResult> {
@@ -244,8 +385,22 @@ export class DiscoveryAgent {
         return fromBrowserResult("click", await this.actions.click(targetToLocator(decision.target!)));
       case "type":
         return fromBrowserResult("type", await this.actions.fill(targetToLocator(decision.target!), decision.value!));
-      case "read":
-        return fromBrowserResult("read", await this.actions.readText(targetToLocator(decision.target!)));
+      case "read": {
+        const result = fromBrowserResult("read", await this.actions.readText(targetToLocator(decision.target!)));
+        if (!result.success || result.value === undefined || decision.extractionPattern === undefined) return result;
+        const match = result.value.match(new RegExp(decision.extractionPattern));
+        if (match === null) {
+          return {
+            success: false,
+            action: "read",
+            error: {
+              type: "EXTRACTION_FAILED",
+              message: `Read text did not match extractionPattern for output "${decision.outputName}".`,
+            },
+          };
+        }
+        return { ...result, value: match[1] ?? match[0] };
+      }
       case "navigate":
         return fromBrowserResult("navigate", await this.actions.navigate(new URL(decision.value!, currentUrl).toString()));
       case "wait":

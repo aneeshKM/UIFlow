@@ -3,28 +3,45 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { ArtifactValidator } from "../src/artifact/ArtifactValidator.js";
 import type { CapabilityArtifact } from "../src/artifact/types.js";
+import type { CapabilityStep } from "../src/artifact/types.js";
 import { BrowserActions } from "../src/browser/BrowserActions.js";
 import { BrowserSession } from "../src/browser/BrowserSession.js";
 import { LocatorResolver } from "../src/browser/LocatorResolver.js";
 import { SurfaceObserver } from "../src/browser/SurfaceObserver.js";
 import type { ActionResult } from "../src/browser/types.js";
 import { readConfig } from "../src/config.js";
+import { InterventionManager } from "../src/escalation/InterventionManager.js";
+import { OperatorConsole } from "../src/escalation/OperatorConsole.js";
+import { SessionControl } from "../src/escalation/SessionControl.js";
 import { CheckpointEvaluator } from "../src/replay/CheckpointEvaluator.js";
 import { InputResolver } from "../src/replay/InputResolver.js";
 import { OutcomeDetector } from "../src/replay/OutcomeDetector.js";
 import { ReplayEngine } from "../src/replay/ReplayEngine.js";
 import { StepExecutor } from "../src/replay/StepExecutor.js";
-import type { ReplayResult, RuntimeInputs, RuntimeOutputs } from "../src/replay/types.js";
+import type { ReplayResult, ReplayStepExecutor, RuntimeInputs, RuntimeOutputs } from "../src/replay/types.js";
 
-function parseArguments(argv: string[]): { artifactPath: string; inputs: RuntimeInputs } {
+interface ReplayArguments {
+  artifactPath: string;
+  inputs: RuntimeInputs;
+  headed: boolean;
+  demoFailureStepId?: string;
+}
+
+function parseArguments(argv: string[]): ReplayArguments {
   const [artifactPath, ...argumentsAfterPath] = argv;
   if (!artifactPath || artifactPath.startsWith("--")) {
-    throw new Error("Usage: npm run replay -- <artifact.json> --key value [--key value ...]");
+    throw new Error("Usage: npm run replay -- <artifact.json> [--headed] [--demo-failure step-id] --key value");
   }
 
   const inputs: RuntimeInputs = {};
+  let headed = false;
+  let demoFailureStepId: string | undefined;
   for (let index = 0; index < argumentsAfterPath.length; index += 1) {
     const argument = argumentsAfterPath[index]!;
+    if (argument === "--headed") {
+      headed = true;
+      continue;
+    }
     if (!argument.startsWith("--") || argument === "--") {
       throw new Error(`Expected a --key runtime input, received "${argument}".`);
     }
@@ -35,12 +52,22 @@ function parseArguments(argv: string[]): { artifactPath: string; inputs: Runtime
     if (!name || value === undefined || value.startsWith("--")) {
       throw new Error(`Runtime input "${argument}" requires a value.`);
     }
+    if (name === "demo-failure") {
+      if (demoFailureStepId !== undefined) throw new Error("--demo-failure was provided more than once.");
+      demoFailureStepId = String(value);
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(inputs, name)) {
       throw new Error(`Runtime input "${name}" was provided more than once.`);
     }
     inputs[name] = value;
   }
-  return { artifactPath: resolve(artifactPath), inputs };
+  return {
+    artifactPath: resolve(artifactPath),
+    inputs,
+    headed,
+    ...(demoFailureStepId === undefined ? {} : { demoFailureStepId }),
+  };
 }
 
 function requireSuccess<T>(result: ActionResult<T>): T {
@@ -78,6 +105,7 @@ function evidenceRecord(
     completedSteps,
     outputs,
     durationMs,
+    interventions: "interventions" in result ? result.interventions ?? 0 : 0,
     ...(result.status === "business_outcome"
       ? { businessOutcome: { code: result.code, stepId: result.stepId, details: result.details } }
       : {}),
@@ -96,17 +124,26 @@ function evidenceRecord(
 }
 
 async function main(): Promise<void> {
-  const { artifactPath, inputs } = parseArguments(process.argv.slice(2));
+  const { artifactPath, inputs, headed, demoFailureStepId } = parseArguments(process.argv.slice(2));
   const artifact = await loadArtifact(artifactPath);
+  if (demoFailureStepId !== undefined) {
+    const demoStep = artifact.steps.find((step) => step.id === demoFailureStepId);
+    if (demoStep === undefined) throw new Error(`Demo failure step "${demoFailureStepId}" does not exist.`);
+    if (!("target" in demoStep)) throw new Error(`Demo failure step "${demoFailureStepId}" has no locator target.`);
+  }
   const config = readConfig();
   const runId = randomUUID();
   const evidenceDirectory = join("evidence", "replay");
   const jsonPath = join(evidenceDirectory, `replay-${runId}.json`);
   const screenshotPath = join(evidenceDirectory, `replay-${runId}.png`);
   const tracePath = join(evidenceDirectory, `replay-${runId}-trace.zip`);
-  const session = new BrowserSession(config.headless);
-  const actions = new BrowserActions(session, new LocatorResolver());
-  const observer = new SurfaceObserver(session);
+  const sessionControl = new SessionControl();
+  const session = new BrowserSession(headed ? false : config.headless);
+  const resolver = new LocatorResolver();
+  const actions = new BrowserActions(session, resolver, sessionControl);
+  const observer = new SurfaceObserver(session, sessionControl);
+  const operatorConsole = new OperatorConsole({ session, actions, observer, resolver, sessionControl });
+  const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole);
   const inputResolver = new InputResolver();
   let sessionStarted = false;
   let tracing = false;
@@ -114,26 +151,42 @@ async function main(): Promise<void> {
   let outputs: RuntimeOutputs = {};
   const startedAt = performance.now();
 
+  const browserStepExecutor = new StepExecutor(actions, observer, inputResolver, artifact.inputs);
+  let demoFailureInjected = false;
+  const stepExecutor: ReplayStepExecutor = {
+    async execute(step, runtimeInputs, runtimeOutputs, baseUrl) {
+      if (demoFailureStepId === step.id && !demoFailureInjected && "target" in step) {
+        demoFailureInjected = true;
+        const forcedMissingStep = {
+          ...step,
+          target: { role: "button", name: `__demo_missing_${step.id}__` },
+        } as CapabilityStep;
+        return browserStepExecutor.execute(forcedMissingStep, runtimeInputs, runtimeOutputs, baseUrl);
+      }
+      return browserStepExecutor.execute(step, runtimeInputs, runtimeOutputs, baseUrl);
+    },
+  };
+
   const engine = new ReplayEngine(
     {
-      stepExecutor: new StepExecutor(actions, observer, inputResolver, artifact.inputs),
+      stepExecutor,
       checkpointEvaluator: new CheckpointEvaluator(actions, observer),
       outcomeDetector: new OutcomeDetector(observer, actions),
       inputResolver,
+      ...(headed ? { interventionManager } : {}),
     },
     {
       runId,
       prepare: async (validatedArtifact) => {
         await session.start();
         sessionStarted = true;
-        await session.startTrace();
-        tracing = true;
-
         requireSuccess(await actions.navigate(new URL("/login", validatedArtifact.target.baseUrl).toString()));
         requireSuccess(await actions.fill({ strategy: "label", label: "Employee ID" }, "replay-session"));
         requireSuccess(await actions.fill({ strategy: "label", label: "Password" }, "replay-session"));
         requireSuccess(await actions.click({ strategy: "role", role: "button", name: "Sign In" }));
         requireSuccess(await actions.waitFor({ strategy: "role", role: "heading", name: "Operations Dashboard" }));
+        await session.startTrace();
+        tracing = true;
       },
       onStepCompleted: (count, _stepId, currentOutputs) => {
         completedSteps = count;
@@ -196,4 +249,3 @@ try {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 }
-

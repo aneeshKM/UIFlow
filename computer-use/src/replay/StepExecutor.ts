@@ -69,6 +69,15 @@ export class StepExecutor {
           } catch {
             return this.failure(step.id, "ACTION_FAILED", `Navigation value is not a valid URL: ${value}`, value);
           }
+          if (new URL(url).origin !== new URL(baseUrl).origin) {
+            return this.failure(
+              step.id,
+              "ACTION_FAILED",
+              `Navigation outside ${new URL(baseUrl).origin} is blocked by replay policy.`,
+              new URL(baseUrl).origin,
+              new URL(url).origin,
+            );
+          }
           result = await this.executeAction(step, undefined, (timeoutMs) => this.actions.navigate(url, timeoutMs));
           break;
         }
@@ -110,7 +119,7 @@ export class StepExecutor {
                 text,
               );
             }
-            extracted = match[0];
+            extracted = match[1] ?? match[0];
           }
           outputs[step.output] = extracted;
           result = { status: "success", output: { name: step.output, value: extracted } };
@@ -249,4 +258,3 @@ export class StepExecutor {
     };
   }
 }
-

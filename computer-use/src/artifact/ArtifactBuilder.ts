@@ -13,7 +13,6 @@ import {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const SENSITIVE_TARGET = /password|passcode|secret|api[_ -]?key|authorization|cookie|session[_ -]?id|token/i;
-const MONEY_PATTERN = "\\$-?[0-9,]+\\.[0-9]{2}";
 
 export interface ArtifactBuilderOptions {
   capabilityId?: string;
@@ -35,11 +34,6 @@ function words(value: string): string[] {
     .match(/[a-z0-9]+/g) ?? [];
 }
 
-function toCamelCase(value: string): string {
-  const parts = words(value);
-  return parts.map((part, index) => index === 0 ? part : `${part[0]?.toUpperCase()}${part.slice(1)}`).join("");
-}
-
 function toKebabCase(value: string): string {
   return words(value).join("-").slice(0, 64).replace(/-+$/g, "");
 }
@@ -48,20 +42,30 @@ function titleCase(value: string): string {
   return words(value).map((part) => `${part[0]?.toUpperCase()}${part.slice(1)}`).join(" ");
 }
 
-function deriveInputName(target: AgentTarget): string {
-  const description = target.name ?? target.text ?? target.role ?? "input";
-  if (/\bmember\s+(?:number|id)\b/i.test(description)) return "memberId";
-  const name = toCamelCase(description);
-  return name && /^[A-Za-z]/.test(name) ? name : "input";
-}
-
 function targetDescription(target: AgentTarget | undefined): string {
   return [target?.role, target?.name, target?.text].filter(Boolean).join(" ");
 }
 
-function toArtifactTarget(target: AgentTarget): ArtifactTarget {
-  if (target.role !== undefined && target.name !== undefined) return { role: target.role, name: target.name };
-  if (target.text !== undefined) return { text: target.text };
+function stableLocatorText(value: string, dynamicValues: string[]): string {
+  const positions = dynamicValues
+    .filter((dynamicValue) => dynamicValue.length > 0)
+    .map((dynamicValue) => value.indexOf(dynamicValue))
+    .filter((position) => position >= 0);
+  const maskedIdentifier = value.search(/\*{2,}\d+/);
+  if (maskedIdentifier >= 0) positions.push(maskedIdentifier);
+  if (positions.length === 0) return value;
+  const stablePrefix = value.slice(0, Math.min(...positions)).trim().replace(/[-:–—]+$/g, "").trim();
+  if (stablePrefix.length === 0) {
+    throw new Error("A semantic target is the discovery-time runtime value instead of a stable label.");
+  }
+  return stablePrefix;
+}
+
+function toArtifactTarget(target: AgentTarget, dynamicValues: string[] = []): ArtifactTarget {
+  if (target.role !== undefined && target.name !== undefined) {
+    return { role: target.role, name: stableLocatorText(target.name, dynamicValues) };
+  }
+  if (target.text !== undefined) return { text: stableLocatorText(target.text, dynamicValues) };
   throw new Error("A successful discovery action has no reusable semantic target.");
 }
 
@@ -98,36 +102,25 @@ function uniqueStepId(base: string, used: Set<string>): string {
   return id;
 }
 
-function deriveCapabilityIdentity(goal: string, options: ArtifactBuilderOptions): { id: string; name: string } {
-  if (/\bmember\b/i.test(goal) && /\bsavings\s+balance\b/i.test(goal)) {
-    return {
-      id: options.capabilityId ?? "get-member-savings-balance",
-      name: options.capabilityName ?? "Get member savings balance",
-    };
-  }
-  const withoutValues = goal.replace(/\b\d+\b/g, "").replace(/\s+/g, " ").trim();
-  const id = options.capabilityId ?? toKebabCase(withoutValues);
-  return { id, name: options.capabilityName ?? titleCase(withoutValues) };
+function semanticNameParts(name: string, kind: "input" | "output"): string[] {
+  const parts = words(name);
+  if (kind === "input" && ["id", "number", "code", "key"].includes(parts.at(-1) ?? "")) parts.pop();
+  if (kind === "output" && parts[0] === "current") parts.shift();
+  return parts;
 }
 
-function deriveSyntheticExtraction(
-  output: OutputDefinition,
-  finalAriaSnapshot: string,
-  usedIds: Set<string>,
-  timeoutMs: number,
-): CapabilityStep {
-  if (/savings.*balance/i.test(output.name) && /row\s+"Savings\b/i.test(finalAriaSnapshot)) {
-    return {
-      id: uniqueStepId(`extract-${output.name}`, usedIds),
-      action: "extract",
-      target: { role: "row", name: "Savings" },
-      output: output.name,
-      pattern: MONEY_PATTERN,
-      timeoutMs,
-      expected: { kind: "output_present", output: output.name },
-    };
-  }
-  throw new Error(`Could not derive a stable extraction target for output "${output.name}".`);
+function deriveCapabilityIdentity(
+  inputs: InputDefinition[],
+  outputs: OutputDefinition[],
+  options: ArtifactBuilderOptions,
+): { id: string; name: string } {
+  const parts = [
+    "get",
+    ...inputs.flatMap(({ name }) => semanticNameParts(name, "input")),
+    ...outputs.flatMap(({ name }) => semanticNameParts(name, "output")),
+  ].filter((part, index, all) => index === 0 || part !== all[index - 1]);
+  const id = options.capabilityId ?? toKebabCase(parts.join(" "));
+  return { id, name: options.capabilityName ?? titleCase(parts.join(" ")) };
 }
 
 function assertSuccessfulRun(run: DiscoveryRun): void {
@@ -162,8 +155,11 @@ export class ArtifactBuilder {
       .map((step) => step.decision!);
     const bindings = this.deriveInputs(successfulDecisions);
     const outputs = this.deriveOutputs(run, bindings);
+    const dynamicValues = [
+      ...bindings.map(({ concreteValue }) => concreteValue),
+      ...Object.values(run.outputs ?? {}),
+    ];
     const firstUrl = new URL(run.steps[0]!.url);
-    const finalObservation = run.steps.at(-1)!.observation;
     const usedIds = new Set<string>();
     const steps: CapabilityStep[] = [];
 
@@ -182,7 +178,7 @@ export class ArtifactBuilder {
       if (decision.action === "wait" && decision.target === undefined) {
         const nextTarget = successfulDecisions.slice(index + 1).find((candidate) => candidate.target !== undefined)?.target;
         if (nextTarget === undefined) continue;
-        const target = toArtifactTarget(nextTarget);
+        const target = toArtifactTarget(nextTarget, dynamicValues);
         steps.push({
           id: uniqueStepId(`wait-for-${targetSlug(target)}`, usedIds),
           action: "wait_for",
@@ -192,18 +188,8 @@ export class ArtifactBuilder {
         });
         continue;
       }
-      const mapped = this.mapDecision(decision, bindings, usedIds);
+      const mapped = this.mapDecision(decision, bindings, dynamicValues, usedIds);
       if (mapped !== undefined) steps.push(mapped);
-    }
-
-    const extractedOutputs = new Set(
-      steps.filter((step): step is Extract<CapabilityStep, { action: "extract" }> => step.action === "extract")
-        .map(({ output }) => output),
-    );
-    for (const output of outputs) {
-      if (!extractedOutputs.has(output.name)) {
-        steps.push(deriveSyntheticExtraction(output, finalObservation.ariaSnapshot, usedIds, this.timeoutMs));
-      }
     }
 
     const extractionSteps = steps.filter(
@@ -215,7 +201,7 @@ export class ArtifactBuilder {
       checkpointConditions.push({ kind: "output_present", output: step.output });
     }
 
-    const identity = deriveCapabilityIdentity(run.goal, this.options);
+    const identity = deriveCapabilityIdentity(bindings.map(({ definition }) => definition), outputs, this.options);
     const artifact: CapabilityArtifact = {
       schemaVersion: CAPABILITY_SCHEMA_VERSION,
       capability: {
@@ -241,6 +227,12 @@ export class ArtifactBuilder {
         sourceRunId: run.runId,
       },
     };
+    const executable = JSON.stringify({ ...artifact, metadata: undefined });
+    for (const [name, value] of Object.entries(run.outputs ?? {})) {
+      if (value.length >= 4 && executable.includes(value)) {
+        throw new Error(`Discovery-time output value for "${name}" would be persisted in the artifact.`);
+      }
+    }
     return this.validator.validate(artifact);
   }
 
@@ -251,7 +243,10 @@ export class ArtifactBuilder {
       if (SENSITIVE_TARGET.test(targetDescription(decision.target))) {
         throw new Error("Discovery contains a sensitive typed value that cannot be stored in a capability artifact.");
       }
-      const name = deriveInputName(decision.target);
+      if (decision.inputName === undefined) {
+        throw new Error(`Successful type decision for "${targetDescription(decision.target)}" has no inputName.`);
+      }
+      const name = decision.inputName;
       const existing = bindings.get(name);
       if (existing !== undefined && existing.concreteValue !== decision.value) {
         throw new Error(`Discovery assigned multiple values to input "${name}".`);
@@ -278,7 +273,9 @@ export class ArtifactBuilder {
       }
     }
     for (const [name, value] of Object.entries(run.outputs ?? {})) {
-      if (!inputValues.has(value)) names.add(name);
+      if (!inputValues.has(value) && !names.has(name)) {
+        throw new Error(`Output "${name}" has no successful structured read extraction.`);
+      }
     }
     if (names.size === 0) throw new Error("Successful discovery did not produce a reusable output.");
     return [...names].map((name) => ({ name, type: "string" as const }));
@@ -287,6 +284,7 @@ export class ArtifactBuilder {
   private mapDecision(
     decision: AgentDecision,
     bindings: InputBinding[],
+    dynamicValues: string[],
     usedIds: Set<string>,
   ): CapabilityStep | undefined {
     switch (decision.action) {
@@ -301,7 +299,7 @@ export class ArtifactBuilder {
         };
       }
       case "click": {
-        const target = toArtifactTarget(decision.target!);
+        const target = toArtifactTarget(decision.target!, dynamicValues);
         return {
           id: uniqueStepId(`click-${targetSlug(target)}`, usedIds),
           action: "click",
@@ -312,7 +310,7 @@ export class ArtifactBuilder {
       }
       case "type": {
         if (decision.value === undefined) throw new Error("Successful type decision has no value.");
-        const target = toArtifactTarget(decision.target!);
+        const target = toArtifactTarget(decision.target!, dynamicValues);
         return {
           id: uniqueStepId(`type-${targetSlug(target)}`, usedIds),
           action: "type",
@@ -324,18 +322,22 @@ export class ArtifactBuilder {
       }
       case "read": {
         if (decision.outputName === undefined) throw new Error("Successful read decision has no outputName.");
-        const target = toArtifactTarget(decision.target!);
+        const target = toArtifactTarget(decision.target!, dynamicValues);
+        if (decision.extractionPattern !== undefined && /\d{3,}/.test(decision.extractionPattern)) {
+          throw new Error(`Extraction pattern for output "${decision.outputName}" contains a copied literal value.`);
+        }
         return {
           id: uniqueStepId(`extract-${decision.outputName}`, usedIds),
           action: "extract",
           target,
           output: decision.outputName,
+          ...(decision.extractionPattern === undefined ? {} : { pattern: decision.extractionPattern }),
           timeoutMs: this.timeoutMs,
           expected: { kind: "output_present", output: decision.outputName },
         };
       }
       case "wait": {
-        const target = toArtifactTarget(decision.target!);
+        const target = toArtifactTarget(decision.target!, dynamicValues);
         return {
           id: uniqueStepId(`wait-for-${targetSlug(target)}`, usedIds),
           action: "wait_for",

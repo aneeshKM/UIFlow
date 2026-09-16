@@ -50,7 +50,9 @@ export const AgentDecisionSchema = z.object({
   action: z.enum(["click", "type", "read", "navigate", "wait", "finish", "fail"]),
   target: AgentTargetSchema.nullable(),
   value: z.string().nullable(),
+  inputName: z.string().nullable(),
   outputName: z.string().nullable(),
+  extractionPattern: z.string().nullable(),
   reason: z.string(),
   result: z.array(AgentOutputSchema).nullable(),
 }).strict();
@@ -74,7 +76,9 @@ export function parseAgentDecision(input: unknown): AgentDecision {
     action: parsed.action,
     ...(target === undefined ? {} : { target }),
     ...(parsed.value === null ? {} : { value: parsed.value }),
+    ...(parsed.inputName === null ? {} : { inputName: parsed.inputName }),
     ...(parsed.outputName === null ? {} : { outputName: parsed.outputName }),
+    ...(parsed.extractionPattern === null ? {} : { extractionPattern: parsed.extractionPattern }),
     reason: parsed.reason,
     ...(result === undefined ? {} : { result }),
   };

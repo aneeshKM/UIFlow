@@ -67,7 +67,7 @@ export const CapabilityStepSchema = z.discriminatedUnion("action", [
     action: z.literal("extract"),
     target: ArtifactTargetSchema,
     output: IdentifierSchema,
-    pattern: z.string().min(1).optional(),
+    pattern: z.string().min(1).max(200).optional(),
   }).strict(),
   z.object({ ...StepBaseShape, action: z.literal("wait_for"), target: ArtifactTargetSchema }).strict(),
   z.object({
