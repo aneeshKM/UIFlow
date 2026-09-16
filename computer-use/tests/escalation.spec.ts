@@ -231,7 +231,7 @@ test("OperatorConsole uses the exact live session and records redacted human act
   ]);
   const operator = new OperatorConsole({ session, actions, observer, resolver, sessionControl: control, io });
   const manager = new InterventionManager(observer, control, operator, {
-    evidenceDirectory,
+    runEvidenceDirectory: evidenceDirectory,
     idFactory: () => "int-evidence",
     now: () => new Date("2026-09-15T12:00:00.000Z"),
   });
@@ -261,6 +261,12 @@ test("OperatorConsole uses the exact live session and records redacted human act
       "observe:HUMAN",
       "screenshot:HUMAN",
     ]);
+    const interventionDirectory = join(evidenceDirectory, "interventions", "int-evid");
+    expect(outcome.evidence).toEqual({
+      json: join(interventionDirectory, "intervention.json"),
+      beforeScreenshot: join(interventionDirectory, "before.png"),
+      afterScreenshot: join(interventionDirectory, "after.png"),
+    });
     const evidence = await readFile(outcome.evidence.json, "utf8");
     expect(evidence).toContain('"action": "click"');
     expect(evidence).toContain('"value": "[REDACTED]"');
@@ -292,7 +298,7 @@ test("human abort stays structured when the after screenshot cannot be captured"
     io: new ScriptedIO(["abort", "Operator chose to stop"]),
   });
   const manager = new InterventionManager(observer, control, operator, {
-    evidenceDirectory,
+    runEvidenceDirectory: evidenceDirectory,
     idFactory: () => "int-abort",
   });
 

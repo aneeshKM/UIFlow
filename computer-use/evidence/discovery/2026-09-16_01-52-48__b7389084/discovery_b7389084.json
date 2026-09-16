@@ -113,7 +113,7 @@
         "action": "click",
         "error": {
           "type": "ACTION_FAILED",
-          "message": "locator.click: Error: strict mode violation: getByRole('link', { name: 'View' }) resolved to 3 elements:\n    1) <a data-discover=\"true\" href=\"/members/12345/accounts/acc-101\">…</a> aka getByRole('row', { name: 'Savings ****4521 $4,281.50' }).getByRole('link')\n    2) <a data-discover=\"true\" href=\"/members/12345/accounts/acc-102\">…</a> aka getByRole('link', { name: 'View' }).nth(1)\n    3) <a data-discover=\"true\" href=\"/members/12345/accounts/acc-103\">…</a> aka getByRole('link', { name: 'View' }).nth(2)\n\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'View' })\u001b[22m\n"
+          "message": "locator.click: Error: strict mode violation: getByRole('link', { name: 'View' }) resolved to 3 elements:\n    1) <a data-discover=\"true\" href=\"/members/12345/accounts/acc-101\">\u2026</a> aka getByRole('row', { name: 'Savings ****4521 $4,281.50' }).getByRole('link')\n    2) <a data-discover=\"true\" href=\"/members/12345/accounts/acc-102\">\u2026</a> aka getByRole('link', { name: 'View' }).nth(1)\n    3) <a data-discover=\"true\" href=\"/members/12345/accounts/acc-103\">\u2026</a> aka getByRole('link', { name: 'View' }).nth(2)\n\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'View' })\u001b[22m\n"
         }
       }
     },
@@ -168,8 +168,8 @@
     "savingsBalance": "$4,281.50"
   },
   "evidence": {
-    "json": "evidence/discovery/discovery-success.json",
-    "screenshot": "evidence/discovery/discovery-success.png",
-    "trace": "evidence/discovery/discovery-success-trace.zip"
+    "json": "evidence/discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084.json",
+    "screenshot": "evidence/discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084.png",
+    "trace": "evidence/discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084-trace.zip"
   }
 }

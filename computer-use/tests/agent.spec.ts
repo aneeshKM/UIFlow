@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { DiscoveryAgent, type DiscoveryBrowserActions, type DiscoverySurfaceObserver } from "../src/agent/DiscoveryAgent.js";
 import { redactDiscoveryRun } from "../src/agent/DiscoveryAgent.js";
@@ -5,6 +8,7 @@ import type { AgentDecision, AgentDecisionContext, AgentModel, DiscoveryRun } fr
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../src/browser/types.js";
 import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 import type { InterventionDetails, InterventionHandler } from "../src/escalation/types.js";
+import { createDiscoveryEvidencePaths } from "../src/evidence/paths.js";
 
 const bankUrl = "http://localhost:5174";
 const observation: SurfaceObservation = {
@@ -251,4 +255,36 @@ test("redacts secrets before evidence is serialized", () => {
   const redacted = redactDiscoveryRun(run);
   expect(redacted.steps[0]?.decision?.value).toBe("[REDACTED]");
   expect(redacted.steps[0]?.decision).not.toHaveProperty("reason");
+});
+
+test("writes discovery evidence with full IDs and the existing evidence JSON shape", async () => {
+  const evidenceRoot = await mkdtemp(join(tmpdir(), "discovery-evidence-test-"));
+  const runId = "12345678-90ab-cdef-1234-567890abcdef";
+  const startedAt = new Date("2026-09-16T02:04:05.987Z");
+  const evidencePaths = createDiscoveryEvidencePaths(startedAt, runId, evidenceRoot);
+  const model = new SequenceModel([{ action: "finish", reason: "Done.", result: {} }]);
+
+  try {
+    const run = await new DiscoveryAgent(
+      model,
+      new StubObserver(),
+      new StubActions(),
+      new ActionPolicy(bankUrl),
+      { maxSteps: 1, timeoutMs: 5_000, runId, startedAt, evidencePaths },
+    ).run("Confirm the evidence layout");
+
+    const expectedEvidence = {
+      json: evidencePaths.json,
+      screenshot: evidencePaths.screenshot,
+      trace: evidencePaths.trace,
+    };
+    expect(run).toMatchObject({ runId, startedAt: startedAt.toISOString(), evidence: expectedEvidence });
+    expect(run.evidence).not.toHaveProperty("directory");
+
+    const persisted = JSON.parse(await readFile(evidencePaths.json, "utf8"));
+    expect(persisted).toMatchObject({ runId, startedAt: startedAt.toISOString(), evidence: expectedEvidence });
+    expect(persisted.evidence).not.toHaveProperty("directory");
+  } finally {
+    await rm(evidenceRoot, { recursive: true, force: true });
+  }
 });

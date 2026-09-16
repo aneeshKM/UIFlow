@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import type { SurfaceObserver } from "../browser/SurfaceObserver.js";
 import { evidenceWriter } from "../evidence/EvidenceWriter.js";
+import { createInterventionEvidencePaths } from "../evidence/paths.js";
 import { redactObservation } from "../evidence/Redactor.js";
 import type { SessionControl } from "./SessionControl.js";
 import type { OperatorConsole, OperatorConsoleResult } from "./OperatorConsole.js";
@@ -14,13 +14,13 @@ import type {
 } from "./types.js";
 
 export interface InterventionManagerOptions {
-  evidenceDirectory?: string;
+  runEvidenceDirectory: string;
   now?: () => Date;
   idFactory?: () => string;
 }
 
 export class InterventionManager implements InterventionHandler {
-  private readonly evidenceDirectory: string;
+  private readonly runEvidenceDirectory: string;
   private readonly now: () => Date;
   private readonly idFactory: () => string;
 
@@ -28,9 +28,9 @@ export class InterventionManager implements InterventionHandler {
     private readonly observer: SurfaceObserver,
     private readonly sessionControl: SessionControl,
     private readonly operatorConsole: OperatorConsole,
-    options: InterventionManagerOptions = {},
+    options: InterventionManagerOptions,
   ) {
-    this.evidenceDirectory = options.evidenceDirectory ?? join("evidence", "escalation");
+    this.runEvidenceDirectory = options.runEvidenceDirectory;
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => `int-${randomUUID()}`);
   }
@@ -122,10 +122,6 @@ export class InterventionManager implements InterventionHandler {
   }
 
   private paths(interventionId: string): InterventionEvidencePaths {
-    return {
-      json: join(this.evidenceDirectory, `intervention-${interventionId}.json`),
-      beforeScreenshot: join(this.evidenceDirectory, `intervention-${interventionId}-before.png`),
-      afterScreenshot: join(this.evidenceDirectory, `intervention-${interventionId}-after.png`),
-    };
+    return createInterventionEvidencePaths(this.runEvidenceDirectory, interventionId);
   }
 }

@@ -108,14 +108,14 @@ npm run discover -- \
   "Look up member 12345 and read their current savings balance"
 ```
 
-The command establishes the simulated login in trusted code, starts tracing, and runs the bounded model loop. It writes a redacted discovery JSON record, screenshot, and trace under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
+The command establishes the simulated login in trusted code, starts tracing, and runs the bounded model loop. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
 
 ```bash
 npm run artifact:build -- \
-  evidence/discovery/discovery-success.json
+  evidence/discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084.json
 ```
 
-For a new discovery, replace that path with the UUID-named JSON path printed by `discover`. The builder parameterizes discovered inputs, removes model reasoning and concrete outputs, creates semantic steps and checkpoints, and validates the final artifact before an atomic owner-only write. The checked-in example is `artifacts/get-member-savings-balance.v1.json`.
+For a new discovery, replace that path with the run JSON path printed by `discover`. The builder parameterizes discovered inputs, removes model reasoning and concrete outputs, creates semantic steps and checkpoints, and validates the final artifact before an atomic owner-only write. The checked-in example is `artifacts/get-member-savings-balance.v1.json`.
 
 ## Run deterministic replay
 
@@ -169,9 +169,9 @@ Press Enter for the optional note. The same browser session transfers exclusivel
 
 ## Evidence
 
-Every run uses a consistent record with IDs, status, actions or completed steps, outputs or failure, duration, intervention count, and evidence paths. JSON passes through `EvidenceWriter` and the recursive `Redactor` before reaching disk. Operator typed values are always recorded as `[REDACTED]`; observations redact form-control values. Screenshots and traces contain only the synthetic demo application and must receive deployment-specific retention and access controls with real customer data.
+Every run uses a consistent record with IDs, status, actions or completed steps, outputs or failure, duration, intervention count, and evidence paths. Run evidence lives under `evidence/discovery/` or `evidence/replay/` in a `YYYY-MM-DD_HH-mm-ss__<short-run-id>` folder, formatted in UTC. Intervention JSON and before/after screenshots live in that run folder's `interventions/<short-intervention-id>/` subfolder. JSON keeps full UUIDs and unchanged timestamps. JSON passes through `EvidenceWriter` and the recursive `Redactor` before reaching disk. Operator typed values are always recorded as `[REDACTED]`; observations redact form-control values. Screenshots and traces contain only the synthetic demo application and must receive deployment-specific retention and access controls with real customer data.
 
-The small checked-in review set is indexed in [evidence/README.md](evidence/README.md). New UUID-named run files remain ignored so routine demos do not pollute the repository.
+The small checked-in review set is indexed in [evidence/README.md](evidence/README.md). New run folders remain ignored so routine demos do not pollute the repository.
 
 ## Safety
 

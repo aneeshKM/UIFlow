@@ -10,7 +10,7 @@
   "stepIndex": 2,
   "currentUrl": "http://localhost:5174/members",
   "observation": "- banner:\n  - heading \"Northstar Credit Union\" [level=1]\n  - paragraph: Member Servicing System\n  - text: \"User: operator01 Session: Active\"\n- navigation:\n  - link \"Home\":\n    - /url: /dashboard\n  - link \"Members\":\n    - /url: /members\n  - link \"Accounts\":\n    - /url: /accounts\n  - link \"Transactions\":\n    - /url: /transactions\n  - link \"Admin\":\n    - /url: /admin\n- main:\n  - heading \"Member Search\" [level=2]\n  - link \"Create New Member\":\n    - /url: /members/new\n    - button \"Create New Member\"\n  - text: Search Criteria Member Number\n  - textbox \"Member Number\": \"[REDACTED]\"\n  - button \"Search\"\n- contentinfo: \"System Status: Connected | Northstar Core Services\"",
-  "screenshotPath": "evidence/escalation/intervention-before.png",
+  "screenshotPath": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/before.png",
   "createdAt": "2026-09-15T22:58:15.694Z",
   "control": {
     "from": "AUTOMATION",
@@ -38,8 +38,8 @@
   "resolution": "STEP_COMPLETED",
   "resolvedAt": "2026-09-15T22:58:43.079Z",
   "evidence": {
-    "json": "evidence/escalation/intervention.json",
-    "beforeScreenshot": "evidence/escalation/intervention-before.png",
-    "afterScreenshot": "evidence/escalation/intervention-after.png"
+    "json": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/intervention.json",
+    "beforeScreenshot": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/before.png",
+    "afterScreenshot": "evidence/replay/2026-09-15_22-58-15__e9379153/interventions/int-7951/after.png"
   }
 }

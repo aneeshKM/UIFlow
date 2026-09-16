@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { ArtifactValidator } from "../src/artifact/ArtifactValidator.js";
 import type { CapabilityArtifact } from "../src/artifact/types.js";
 import type { CapabilityStep } from "../src/artifact/types.js";
@@ -14,6 +14,7 @@ import { InterventionManager } from "../src/escalation/InterventionManager.js";
 import { OperatorConsole } from "../src/escalation/OperatorConsole.js";
 import { SessionControl } from "../src/escalation/SessionControl.js";
 import { evidenceWriter } from "../src/evidence/EvidenceWriter.js";
+import { createReplayEvidencePaths } from "../src/evidence/paths.js";
 import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 import { CheckpointEvaluator } from "../src/replay/CheckpointEvaluator.js";
 import { InputResolver } from "../src/replay/InputResolver.js";
@@ -137,10 +138,9 @@ async function main(): Promise<void> {
   }
   const config = readConfig();
   const runId = randomUUID();
-  const evidenceDirectory = join("evidence", "replay");
-  const jsonPath = join(evidenceDirectory, `replay-${runId}.json`);
-  const screenshotPath = join(evidenceDirectory, `replay-${runId}.png`);
-  const tracePath = join(evidenceDirectory, `replay-${runId}-trace.zip`);
+  const runStartedAt = new Date();
+  const evidencePaths = createReplayEvidencePaths(runStartedAt, runId);
+  const { json: jsonPath, screenshot: screenshotPath, trace: tracePath } = evidencePaths;
   const sessionControl = new SessionControl();
   const session = new BrowserSession(headed ? false : config.headless);
   const resolver = new LocatorResolver();
@@ -148,7 +148,9 @@ async function main(): Promise<void> {
   const actions = new BrowserActions(session, resolver, policy, sessionControl);
   const observer = new SurfaceObserver(session, policy, sessionControl);
   const operatorConsole = new OperatorConsole({ session, actions, observer, resolver, sessionControl });
-  const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole);
+  const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole, {
+    runEvidenceDirectory: evidencePaths.directory,
+  });
   const inputResolver = new InputResolver();
   let sessionStarted = false;
   let tracing = false;

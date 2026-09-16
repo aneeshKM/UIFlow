@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
 import { evidenceWriter } from "../evidence/EvidenceWriter.js";
 import { isSensitiveKey, redactObservation, redactValue } from "../evidence/Redactor.js";
@@ -39,8 +38,8 @@ export interface DiscoveryAgentOptions {
   maxSteps: number;
   timeoutMs: number;
   runId?: string;
-  evidenceDirectory?: string;
-  tracePath?: string;
+  evidencePaths?: DiscoveryEvidencePaths;
+  startedAt?: Date;
   waitDurationMs?: number;
   onStep?: (step: AgentStep) => void | Promise<void>;
   now?: () => Date;
@@ -141,7 +140,7 @@ export class DiscoveryAgent {
     const trimmedGoal = goal.trim();
     if (!trimmedGoal) throw new Error("Discovery goal must not be empty.");
 
-    const state = new DiscoveryRunState(trimmedGoal, this.options.runId, this.now);
+    const state = new DiscoveryRunState(trimmedGoal, this.options.runId, this.now, this.options.startedAt);
     let controller = new AbortController();
     let timeout = this.startTimeout(controller);
     let stepLimit = this.options.maxSteps;
@@ -416,12 +415,12 @@ export class DiscoveryAgent {
     reason: string | undefined,
   ): Promise<DiscoveryRun> {
     let run = state.finish(status, reason, this.now);
-    if (this.options.evidenceDirectory === undefined) return run;
+    if (this.options.evidencePaths === undefined) return run;
 
     const evidence: DiscoveryEvidencePaths = {
-      json: join(this.options.evidenceDirectory, `discovery-${state.runId}.json`),
-      screenshot: join(this.options.evidenceDirectory, `discovery-${state.runId}.png`),
-      ...(this.options.tracePath === undefined ? {} : { trace: this.options.tracePath }),
+      json: this.options.evidencePaths.json,
+      screenshot: this.options.evidencePaths.screenshot,
+      ...(this.options.evidencePaths.trace === undefined ? {} : { trace: this.options.evidencePaths.trace }),
     };
     state.setEvidence(evidence);
 

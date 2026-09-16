@@ -23,10 +23,15 @@ export class DiscoveryRunState {
   private previousResult?: ActionExecutionResult;
   private interventions = 0;
 
-  constructor(goal: string, runId: string = randomUUID(), now: () => Date = () => new Date()) {
+  constructor(
+    goal: string,
+    runId: string = randomUUID(),
+    now: () => Date = () => new Date(),
+    startedAt: Date = now(),
+  ) {
     this.runId = runId;
     this.goal = goal;
-    this.startedAt = now().toISOString();
+    this.startedAt = startedAt.toISOString();
   }
 
   get currentStep(): number {

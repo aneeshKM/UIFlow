@@ -15,8 +15,8 @@
   "durationMs": 1493,
   "interventions": 0,
   "evidence": {
-    "json": "evidence/replay/replay-success.json",
-    "screenshot": "evidence/replay/replay-success.png",
-    "trace": "evidence/replay/replay-success-trace.zip"
+    "json": "evidence/replay/2026-09-16_02-32-08__baf38893/replay_baf38893.json",
+    "screenshot": "evidence/replay/2026-09-16_02-32-08__baf38893/replay_baf38893.png",
+    "trace": "evidence/replay/2026-09-16_02-32-08__baf38893/replay_baf38893-trace.zip"
   }
 }

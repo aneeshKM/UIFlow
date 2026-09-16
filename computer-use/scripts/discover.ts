@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 import { DiscoveryAgent } from "../src/agent/DiscoveryAgent.js";
 import type { AgentStep } from "../src/agent/types.js";
 import { BrowserActions } from "../src/browser/BrowserActions.js";
@@ -11,6 +10,7 @@ import { readDiscoveryConfig } from "../src/config.js";
 import { InterventionManager } from "../src/escalation/InterventionManager.js";
 import { OperatorConsole } from "../src/escalation/OperatorConsole.js";
 import { SessionControl } from "../src/escalation/SessionControl.js";
+import { createDiscoveryEvidencePaths } from "../src/evidence/paths.js";
 import { OpenAIModel } from "../src/llm/OpenAIModel.js";
 import { ActionPolicy } from "../src/policy/ActionPolicy.js";
 
@@ -53,8 +53,8 @@ async function main(): Promise<void> {
 
   const config = readDiscoveryConfig();
   const runId = randomUUID();
-  const evidenceDirectory = join("evidence", "discovery");
-  const tracePath = join(evidenceDirectory, `discovery-${runId}-trace.zip`);
+  const startedAt = new Date();
+  const evidencePaths = createDiscoveryEvidencePaths(startedAt, runId);
   const sessionControl = new SessionControl();
   const session = new BrowserSession(headed ? false : config.headless);
   const resolver = new LocatorResolver();
@@ -62,7 +62,9 @@ async function main(): Promise<void> {
   const actions = new BrowserActions(session, resolver, policy, sessionControl);
   const observer = new SurfaceObserver(session, policy, sessionControl);
   const operatorConsole = new OperatorConsole({ session, actions, observer, resolver, sessionControl });
-  const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole);
+  const interventionManager = new InterventionManager(observer, sessionControl, operatorConsole, {
+    runEvidenceDirectory: evidencePaths.directory,
+  });
   let tracing = false;
 
   console.log("Discovery started");
@@ -87,15 +89,15 @@ async function main(): Promise<void> {
         maxSteps: config.agentMaxSteps,
         timeoutMs: config.agentTimeoutMs,
         runId,
-        evidenceDirectory,
-        tracePath,
+        startedAt,
+        evidencePaths,
         onStep: printStep,
         interventionManager,
       },
     );
 
     const run = await agent.run(goal);
-    await session.stopTrace(tracePath);
+    await session.stopTrace(evidencePaths.trace);
     tracing = false;
 
     console.log(`\nDiscovery ${run.status}.`);
@@ -113,7 +115,7 @@ async function main(): Promise<void> {
   } finally {
     if (tracing) {
       try {
-        await session.stopTrace(tracePath);
+        await session.stopTrace(evidencePaths.trace);
       } catch (error) {
         console.error("Could not save discovery trace:", error instanceof Error ? error.message : error);
       }
