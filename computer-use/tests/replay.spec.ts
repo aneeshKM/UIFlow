@@ -152,6 +152,31 @@ test("stores extracted output and returns success only after the checkpoint pass
   });
 });
 
+test("stops replay with NO_ACCOUNTS_FOUND before attempting extraction", async () => {
+  const capability = await artifact();
+  const noAccounts: ReplayOutcomeDetector = {
+    async detect() {
+      return {
+        status: "business_outcome",
+        code: "NO_ACCOUNTS_FOUND",
+        details: { memberId: "23458" },
+      };
+    },
+  };
+  const replay = createEngine(capability, new StubActions(), new StubObserver(), {
+    outcomeDetector: noAccounts,
+  });
+
+  const result = await replay.engine.run(capability, { memberId: "23458" });
+
+  expect(result).toMatchObject({
+    status: "business_outcome",
+    code: "NO_ACCOUNTS_FOUND",
+    stepId: "navigate-members",
+  });
+  expect(replay.actions.calls.map(({ action }) => action)).toEqual(["navigate"]);
+});
+
 test("rejects missing and unknown runtime inputs before browser execution", async () => {
   const capability = await artifact();
   const missing = createEngine(capability);

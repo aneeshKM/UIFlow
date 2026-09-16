@@ -1,10 +1,11 @@
 import type { LocatorSpec, SurfaceObservation } from "../browser/types.js";
+import type { BusinessOutcome } from "../outcomes/types.js";
 
 type RoleLocatorSpec = Extract<LocatorSpec, { strategy: "role" }>;
 
 export type AgentRole = RoleLocatorSpec["role"];
 export type AgentActionType = "click" | "type" | "read" | "navigate" | "wait" | "finish" | "fail";
-export type AgentRunStatus = "running" | "success" | "failure" | "stopped";
+export type AgentRunStatus = "running" | "success" | "business_outcome" | "failure" | "stopped";
 
 export interface AgentTarget {
   role?: AgentRole;
@@ -55,6 +56,7 @@ export interface DiscoveryRun {
   status: AgentRunStatus;
   steps: AgentStep[];
   outputs?: Record<string, string>;
+  businessOutcome?: BusinessOutcome;
   stopReason?: string;
   evidence?: DiscoveryEvidencePaths;
   interventions?: number;

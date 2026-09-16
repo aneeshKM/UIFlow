@@ -117,6 +117,11 @@ select {
   border: 1px solid #b77;
 }
 
+.empty-state {
+  padding: 18px;
+  background: #edf3f8;
+}
+
 .warning-message {
   padding: 12px;
   background: #fff1c7;

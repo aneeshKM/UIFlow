@@ -26,8 +26,7 @@ async function establishAuthenticatedSession(actions: BrowserActions, bankAppUrl
   requireSuccess(await actions.fill({ strategy: "label", label: "Employee ID" }, "discovery-session"));
   requireSuccess(await actions.fill({ strategy: "label", label: "Password" }, "discovery-session"));
   requireSuccess(await actions.click({ strategy: "role", role: "button", name: "Sign In" }));
-  requireSuccess(await actions.click({ strategy: "role", role: "link", name: "Members" }));
-  requireSuccess(await actions.waitFor({ strategy: "role", role: "heading", name: "Member Search" }));
+  requireSuccess(await actions.waitFor({ strategy: "role", role: "heading", name: "Operations Dashboard" }));
 }
 
 function targetLabel(step: AgentStep): string {
@@ -80,14 +79,16 @@ async function main(): Promise<void> {
       new OpenAIModel({
         apiKey: config.openaiApiKey,
         model: config.openaiModel,
-        requestTimeoutMs: config.agentTimeoutMs,
+        requestTimeoutMs: config.modelRequestTimeoutMs,
+        maxRetries: 0,
       }),
       observer,
       actions,
       policy,
       {
         maxSteps: config.agentMaxSteps,
-        timeoutMs: config.agentTimeoutMs,
+        runTimeoutMs: config.agentRunTimeoutMs,
+        stallLimit: config.agentStallLimit,
         runId,
         startedAt,
         evidencePaths,
@@ -105,10 +106,11 @@ async function main(): Promise<void> {
       runId: run.runId,
       status: run.status,
       outputs: run.outputs ?? {},
+      businessOutcome: run.businessOutcome ?? null,
       stopReason: run.stopReason ?? null,
       evidence: run.evidence ?? null,
     }, null, 2));
-    if (run.status !== "success") process.exitCode = 1;
+    if (run.status === "failure" || run.status === "stopped") process.exitCode = 1;
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;

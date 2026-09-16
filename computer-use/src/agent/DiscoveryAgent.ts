@@ -8,6 +8,7 @@ import type {
   InterventionHandler,
   InterventionReason,
 } from "../escalation/types.js";
+import { classifyApplicationState } from "../outcomes/classifyApplicationState.js";
 import { DiscoveryRunState } from "./runState.js";
 import type {
   ActionExecutionResult,
@@ -36,7 +37,8 @@ export interface DiscoverySurfaceObserver {
 
 export interface DiscoveryAgentOptions {
   maxSteps: number;
-  timeoutMs: number;
+  runTimeoutMs: number;
+  stallLimit?: number;
   runId?: string;
   evidencePaths?: DiscoveryEvidencePaths;
   startedAt?: Date;
@@ -56,6 +58,27 @@ class DiscoveryTimeoutError extends Error {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isModelTimeout(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { code?: unknown }).code === "timeout";
+}
+
+function observationFingerprint(observation: SurfaceObservation): string {
+  return `${observation.url}\n${observation.ariaSnapshot}\n${observation.visibleText}`;
+}
+
+function repeatedActionSignature(decision: AgentDecision, currentUrl: string): string | undefined {
+  if (!["click", "type", "navigate", "wait"].includes(decision.action)) return undefined;
+  return JSON.stringify({
+    url: currentUrl,
+    action: decision.action,
+    target: decision.target ?? null,
+    value: decision.value ?? null,
+  });
 }
 
 export function redactDiscoveryRun(run: DiscoveryRun): DiscoveryRun {
@@ -126,8 +149,12 @@ export class DiscoveryAgent {
     if (!Number.isInteger(options.maxSteps) || options.maxSteps < 1) {
       throw new Error("maxSteps must be a positive integer.");
     }
-    if (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 1) {
-      throw new Error("timeoutMs must be positive.");
+    if (!Number.isFinite(options.runTimeoutMs) || options.runTimeoutMs < 1) {
+      throw new Error("runTimeoutMs must be positive.");
+    }
+    if (options.stallLimit !== undefined
+      && (!Number.isInteger(options.stallLimit) || options.stallLimit < 1)) {
+      throw new Error("stallLimit must be a positive integer.");
     }
     if (options.maxInterventions !== undefined
       && (!Number.isInteger(options.maxInterventions) || options.maxInterventions < 0)) {
@@ -144,6 +171,11 @@ export class DiscoveryAgent {
     let controller = new AbortController();
     let timeout = this.startTimeout(controller);
     let stepLimit = this.options.maxSteps;
+    const stallLimit = this.options.stallLimit ?? 2;
+    let lastObservationFingerprint: string | undefined;
+    let repeatedObservationCount = 0;
+    let loadingRetries = 0;
+    const repeatedActions = new Map<string, number>();
 
     const intervene = async (
       reason: InterventionReason,
@@ -170,6 +202,10 @@ export class DiscoveryAgent {
         if (outcome.resolution.action === "ABORT") return "abort";
         controller = new AbortController();
         timeout = this.startTimeout(controller);
+        lastObservationFingerprint = undefined;
+        repeatedObservationCount = 0;
+        loadingRetries = 0;
+        repeatedActions.clear();
         return "resume";
       } catch {
         return "error";
@@ -212,6 +248,69 @@ export class DiscoveryAgent {
         }
 
         const step = state.recordObservation(observation);
+        const applicationState = classifyApplicationState(observation);
+        if (applicationState.kind === "business_outcome") {
+          state.setBusinessOutcome(applicationState.outcome);
+          return this.complete(state, "business_outcome", undefined);
+        }
+        if (applicationState.kind === "session_expired") {
+          await this.reportStep(step);
+          return this.complete(state, "failure", "session_expired");
+        }
+        if (applicationState.kind === "known_app_error") {
+          await this.reportStep(step);
+          return this.complete(state, "failure", `application_error: ${applicationState.message}`);
+        }
+        if (applicationState.kind === "loading") {
+          if (loadingRetries >= 1) {
+            const resolution = await intervene(
+              "AGENT_TIMEOUT",
+              "The application remained in a transient loading state after one bounded retry.",
+              undefined,
+              step.step,
+            );
+            if (resolution === "resume") continue;
+            if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+            if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+            return this.complete(state, "stopped", "loading_timeout");
+          }
+          loadingRetries += 1;
+          const decision: AgentDecision = {
+            action: "wait",
+            reason: "Wait once for the application to leave its transient loading state.",
+          };
+          state.recordDecision(step, decision);
+          const result = fromBrowserResult(
+            "wait",
+            await withAbort(this.actions.wait(this.options.waitDurationMs ?? 500), controller.signal),
+          );
+          state.recordResult(step, result);
+          await this.reportStep(step);
+          if (!result.success) return this.complete(state, "failure", `loading_wait_failed: ${result.error?.message}`);
+          continue;
+        }
+        loadingRetries = 0;
+
+        const fingerprint = observationFingerprint(observation);
+        if (fingerprint === lastObservationFingerprint) {
+          repeatedObservationCount += 1;
+        } else {
+          lastObservationFingerprint = fingerprint;
+          repeatedObservationCount = 1;
+        }
+        if (repeatedObservationCount > stallLimit) {
+          const resolution = await intervene(
+            "AGENT_STUCK",
+            `Discovery observed the same settled browser state ${repeatedObservationCount} times without progress.`,
+            undefined,
+            step.step,
+          );
+          if (resolution === "resume") continue;
+          if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+          if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+          return this.complete(state, "stopped", "repeated_state");
+        }
+
         let decision: AgentDecision;
         try {
           decision = await withAbort(this.model.decideNextAction({
@@ -225,7 +324,7 @@ export class DiscoveryAgent {
             signal: controller.signal,
           }), controller.signal);
         } catch (error) {
-          if (error instanceof DiscoveryTimeoutError || controller.signal.aborted) {
+          if (error instanceof DiscoveryTimeoutError || controller.signal.aborted || isModelTimeout(error)) {
             const resolution = await intervene(
               "AGENT_TIMEOUT",
               "Discovery timed out while waiting for the model.",
@@ -248,8 +347,10 @@ export class DiscoveryAgent {
           }
           return this.complete(
             state,
-            error instanceof DiscoveryTimeoutError || controller.signal.aborted ? "stopped" : "failure",
-            error instanceof DiscoveryTimeoutError || controller.signal.aborted
+            error instanceof DiscoveryTimeoutError || controller.signal.aborted || isModelTimeout(error)
+              ? "stopped"
+              : "failure",
+            error instanceof DiscoveryTimeoutError || controller.signal.aborted || isModelTimeout(error)
               ? "timeout"
               : `llm_error: ${errorMessage(error)}`,
           );
@@ -279,6 +380,34 @@ export class DiscoveryAgent {
           if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
           if (resolution === "error") return this.complete(state, "failure", "intervention_error");
           return this.complete(state, "failure", `policy_rejected: ${result.error?.message}`);
+        }
+
+        const actionSignature = repeatedActionSignature(decision, observation.url);
+        if (actionSignature !== undefined) {
+          const attempts = (repeatedActions.get(actionSignature) ?? 0) + 1;
+          repeatedActions.set(actionSignature, attempts);
+          if (attempts > stallLimit) {
+            const result: ActionExecutionResult = {
+              success: false,
+              action: decision.action,
+              error: {
+                type: "REPEATED_ACTION",
+                message: `The same action was selected ${attempts} times without producing an output.`,
+              },
+            };
+            state.recordResult(step, result);
+            await this.reportStep(step);
+            const resolution = await intervene(
+              "AGENT_STUCK",
+              result.error!.message,
+              undefined,
+              step.step,
+            );
+            if (resolution === "resume") continue;
+            if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+            if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+            return this.complete(state, "stopped", "repeated_action");
+          }
         }
 
         let result: ActionExecutionResult;
@@ -330,6 +459,7 @@ export class DiscoveryAgent {
         state.recordResult(step, result);
         if (decision.action === "read" && result.success && result.value !== undefined && decision.outputName !== undefined) {
           state.setOutput(decision.outputName, result.value);
+          repeatedActions.clear();
         }
         if (decision.action === "finish" && decision.result !== undefined) state.setOutputs(decision.result);
         await this.reportStep(step);
@@ -354,7 +484,7 @@ export class DiscoveryAgent {
   }
 
   private startTimeout(controller: AbortController): NodeJS.Timeout {
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), this.options.runTimeoutMs);
     timeout.unref();
     return timeout;
   }

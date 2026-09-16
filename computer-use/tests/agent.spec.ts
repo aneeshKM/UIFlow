@@ -47,6 +47,23 @@ class StubObserver implements DiscoverySurfaceObserver {
   }
 }
 
+class SequenceObserver implements DiscoverySurfaceObserver {
+  calls = 0;
+
+  constructor(private readonly observations: SurfaceObservation[]) {}
+
+  async observe(): Promise<SurfaceObservation> {
+    const value = this.observations[Math.min(this.calls, this.observations.length - 1)];
+    this.calls += 1;
+    if (value === undefined) throw new Error("No observation configured.");
+    return value;
+  }
+
+  async captureScreenshot(): Promise<Buffer> {
+    return Buffer.from("screenshot");
+  }
+}
+
 class StubActions implements DiscoveryBrowserActions {
   readonly calls: Array<{ action: string; target?: LocatorSpec; value?: string }> = [];
 
@@ -87,13 +104,14 @@ function createAgent(
   maxSteps = 5,
   interventionManager?: InterventionHandler,
   observer: DiscoverySurfaceObserver = new StubObserver(),
+  stallLimit = 10,
 ): DiscoveryAgent {
   return new DiscoveryAgent(
     model,
     observer,
     actions,
     new ActionPolicy(bankUrl),
-    { maxSteps, timeoutMs: 5_000, interventionManager },
+    { maxSteps, runTimeoutMs: 5_000, stallLimit, interventionManager },
   );
 }
 
@@ -145,6 +163,62 @@ test("finish ends the loop immediately", async () => {
   expect(run.steps).toHaveLength(2);
   expect(run.outputs).toEqual({ savingsBalance: "$4,281.50" });
   expect(model.calls).toBe(2);
+});
+
+test("returns a business outcome before calling the model when the member has no accounts", async () => {
+  const actions = new StubActions();
+  const model = new SequenceModel([{ action: "finish", reason: "Should not be called.", result: {} }]);
+  const missingAccounts: SurfaceObservation = {
+    ...observation,
+    url: `${bankUrl}/members/23458`,
+    visibleText: "Member Information No accounts found for member 23458.",
+    ariaSnapshot: '- heading "Member Information"\n- status: No accounts found for member 23458.',
+  };
+
+  const run = await createAgent(
+    model,
+    actions,
+    5,
+    undefined,
+    new SequenceObserver([missingAccounts]),
+  ).run("Read the savings balance for 23458");
+
+  expect(run).toMatchObject({
+    status: "business_outcome",
+    businessOutcome: {
+      code: "NO_ACCOUNTS_FOUND",
+      details: { memberId: "23458" },
+    },
+  });
+  expect(model.calls).toBe(0);
+  expect(actions.calls).toHaveLength(0);
+});
+
+test("waits once for a transient loading state without calling the model", async () => {
+  const actions = new StubActions();
+  const model = new SequenceModel([{ action: "finish", reason: "Settled.", result: {} }]);
+  const observer = new SequenceObserver([
+    { ...observation, visibleText: "Member Search Searching...", ariaSnapshot: '- button "Searching..." [disabled]' },
+    observation,
+  ]);
+
+  const run = await createAgent(model, actions, 5, undefined, observer).run("Find the member");
+
+  expect(run.status).toBe("success");
+  expect(actions.calls.filter(({ action }) => action === "wait")).toHaveLength(1);
+  expect(model.calls).toBe(1);
+});
+
+test("stops early when the same settled state repeats without progress", async () => {
+  const actions = new StubActions();
+  const model = new SequenceModel([{ action: "wait", reason: "Try waiting again." }]);
+  const observer = new SequenceObserver([observation]);
+
+  const run = await createAgent(model, actions, 10, undefined, observer, 2).run("Read the balance");
+
+  expect(run).toMatchObject({ status: "stopped", stopReason: "repeated_state" });
+  expect(model.calls).toBe(2);
+  expect(actions.calls.filter(({ action }) => action === "wait")).toHaveLength(2);
 });
 
 test("read returns the first extraction capture group", async () => {
@@ -232,6 +306,19 @@ test("returns a structured failure when the model throws", async () => {
   expect(run.steps).toHaveLength(1);
 });
 
+test("maps a model request timeout to a bounded discovery timeout", async () => {
+  const actions = new StubActions();
+  const model: AgentModel = {
+    async decideNextAction(): Promise<AgentDecision> {
+      throw Object.assign(new Error("OpenAI request timed out."), { code: "timeout" });
+    },
+  };
+
+  const run = await createAgent(model, actions).run("Read the balance");
+
+  expect(run).toMatchObject({ status: "stopped", stopReason: "timeout" });
+});
+
 test("redacts secrets before evidence is serialized", () => {
   const run: DiscoveryRun = {
     runId: "run-1",
@@ -270,7 +357,7 @@ test("writes discovery evidence with full IDs and the existing evidence JSON sha
       new StubObserver(),
       new StubActions(),
       new ActionPolicy(bankUrl),
-      { maxSteps: 1, timeoutMs: 5_000, runId, startedAt, evidencePaths },
+      { maxSteps: 1, runTimeoutMs: 5_000, runId, startedAt, evidencePaths },
     ).run("Confirm the evidence layout");
 
     const expectedEvidence = {

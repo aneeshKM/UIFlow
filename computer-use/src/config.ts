@@ -5,12 +5,14 @@ const environmentSchema = z.object({
   BANK_APP_URL: z.url().default("http://localhost:5174"),
   BANK_API_URL: z.url().default("http://localhost:8001"),
   ALLOWED_ORIGINS: z.string().trim().default(""),
-  ALLOWED_ROUTES: z.string().trim().default("/login,/dashboard,/members"),
+  ALLOWED_ROUTES: z.string().trim().default("/login,/dashboard,/members,/accounts"),
   HEADLESS: z.enum(["true", "false"]).default("false"),
   OPENAI_API_KEY: z.string().trim().default(""),
   OPENAI_MODEL: z.string().trim().min(1).default("gpt-5.6-terra"),
-  AGENT_MAX_STEPS: z.coerce.number().int().positive().max(100).default(20),
-  AGENT_TIMEOUT_MS: z.coerce.number().int().positive().max(900_000).default(120_000),
+  MODEL_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
+  AGENT_RUN_TIMEOUT_MS: z.coerce.number().int().positive().max(900_000).default(90_000),
+  AGENT_MAX_STEPS: z.coerce.number().int().positive().max(100).default(12),
+  AGENT_STALL_LIMIT: z.coerce.number().int().positive().max(10).default(2),
 });
 
 export interface AppConfig {
@@ -21,8 +23,10 @@ export interface AppConfig {
   headless: boolean;
   openaiApiKey: string;
   openaiModel: string;
+  modelRequestTimeoutMs: number;
   agentMaxSteps: number;
-  agentTimeoutMs: number;
+  agentRunTimeoutMs: number;
+  agentStallLimit: number;
 }
 
 export interface DiscoveryConfig extends AppConfig {
@@ -47,8 +51,10 @@ export function readConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     headless: values.HEADLESS === "true",
     openaiApiKey: values.OPENAI_API_KEY,
     openaiModel: values.OPENAI_MODEL,
+    modelRequestTimeoutMs: values.MODEL_REQUEST_TIMEOUT_MS,
     agentMaxSteps: values.AGENT_MAX_STEPS,
-    agentTimeoutMs: values.AGENT_TIMEOUT_MS,
+    agentRunTimeoutMs: values.AGENT_RUN_TIMEOUT_MS,
+    agentStallLimit: values.AGENT_STALL_LIMIT,
   };
 }
 

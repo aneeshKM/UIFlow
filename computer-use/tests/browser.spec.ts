@@ -79,6 +79,18 @@ test("sees the member-not-found state for an unknown ID", async () => {
   expect((await actions.isVisible({ strategy: "text", text: "No member found for ID 12345" })).data).toBe(false);
 });
 
+test("sees an explicit empty-account state for a member without accounts", async () => {
+  await openSearch();
+  expect((await actions.fill({ strategy: "label", label: "Member Number" }, "23458")).success).toBe(true);
+  expect((await actions.click({ strategy: "role", role: "button", name: "Search" })).success).toBe(true);
+  expect((await actions.waitFor({ strategy: "role", role: "row", name: "Jamie Curr" })).success).toBe(true);
+  expect((await actions.click({ strategy: "role", role: "button", name: "View" })).success).toBe(true);
+  const emptyState = { strategy: "role", role: "status", name: "No accounts found for member 23458" } as const;
+  expect((await actions.waitFor(emptyState)).success).toBe(true);
+  expect((await actions.isVisible(emptyState)).data).toBe(true);
+  expect((await actions.isVisible({ strategy: "role", role: "row", name: "Savings" })).data).toBe(false);
+});
+
 test("returns typed failure evidence when a control is missing", async () => {
   await openSearch();
   session.getPage().setDefaultTimeout(1_000);

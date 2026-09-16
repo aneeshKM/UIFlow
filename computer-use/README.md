@@ -60,12 +60,14 @@ Set `OPENAI_API_KEY` in `.env`. The file is ignored by git. Replay does not read
 | `BANK_APP_URL` | `http://localhost:5174` | Frontend URL |
 | `BANK_API_URL` | `http://localhost:8001` | API health-check URL |
 | `ALLOWED_ORIGINS` | `BANK_APP_URL` | Comma-separated browser origin allowlist |
-| `ALLOWED_ROUTES` | `/login,/dashboard,/members` | Comma-separated route-prefix allowlist |
+| `ALLOWED_ROUTES` | `/login,/dashboard,/members,/accounts` | Comma-separated route-prefix allowlist |
 | `HEADLESS` | `false` | Run Chromium without a visible window when `true` |
 | `OPENAI_API_KEY` | empty | Required only by `discover` |
 | `OPENAI_MODEL` | `gpt-5.6-terra` | Discovery model |
-| `AGENT_MAX_STEPS` | `20` | Discovery action limit |
-| `AGENT_TIMEOUT_MS` | `120000` | Discovery deadline |
+| `MODEL_REQUEST_TIMEOUT_MS` | `30000` | Maximum duration of one discovery model request |
+| `AGENT_RUN_TIMEOUT_MS` | `90000` | Overall discovery deadline |
+| `AGENT_MAX_STEPS` | `12` | Discovery action limit |
+| `AGENT_STALL_LIMIT` | `2` | Repeated settled states or identical actions allowed before stopping |
 
 ## Start the demo application
 
@@ -108,7 +110,7 @@ npm run discover -- \
   "Look up member 12345 and read their current savings balance"
 ```
 
-The command establishes the simulated login in trusted code, starts tracing, and runs the bounded model loop. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
+The command establishes the simulated login in trusted code, waits for the operations dashboard, starts tracing, and lets the bounded model loop choose the application section from the goal. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
 
 ```bash
 npm run artifact:build -- \
@@ -135,7 +137,7 @@ npm run replay -- \
   --memberId 99999
 ```
 
-The first command returns `success` and `savingsBalance: "$4,281.50"`. The second returns the valid business outcome `MEMBER_NOT_FOUND` with a successful process exit. Replay validates the artifact and runtime inputs, applies policy before every step, retries a recoverable locator failure once, detects known application states, and evaluates the final checkpoint.
+The first command returns `success` and `savingsBalance: "$4,281.50"`. The second returns the valid business outcome `MEMBER_NOT_FOUND` with a successful process exit. Member `23458` similarly returns `NO_ACCOUNTS_FOUND`. Replay validates the artifact and runtime inputs, applies policy before every step, retries a recoverable locator failure once, detects known application states, and evaluates the final checkpoint.
 
 To prove that replay is model-independent:
 

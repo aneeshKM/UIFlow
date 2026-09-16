@@ -8,6 +8,7 @@ import type {
   DiscoveryRun,
 } from "./types.js";
 import type { SurfaceObservation } from "../browser/types.js";
+import type { BusinessOutcome } from "../outcomes/types.js";
 
 export class DiscoveryRunState {
   readonly runId: string;
@@ -19,6 +20,7 @@ export class DiscoveryRunState {
   private completedAt?: string;
   private stopReason?: string;
   private evidence?: DiscoveryEvidencePaths;
+  private businessOutcome?: BusinessOutcome;
   private previousDecision?: AgentDecision;
   private previousResult?: ActionExecutionResult;
   private interventions = 0;
@@ -86,6 +88,13 @@ export class DiscoveryRunState {
     this.evidence = evidence;
   }
 
+  setBusinessOutcome(outcome: BusinessOutcome): void {
+    this.businessOutcome = {
+      ...outcome,
+      ...(outcome.details === undefined ? {} : { details: { ...outcome.details } }),
+    };
+  }
+
   recordIntervention(): void {
     this.interventions += 1;
   }
@@ -106,6 +115,16 @@ export class DiscoveryRunState {
       status: this.status,
       steps: this.steps.map((step) => ({ ...step })),
       ...(Object.keys(this.outputs).length === 0 ? {} : { outputs: { ...this.outputs } }),
+      ...(this.businessOutcome === undefined
+        ? {}
+        : {
+            businessOutcome: {
+              ...this.businessOutcome,
+              ...(this.businessOutcome.details === undefined
+                ? {}
+                : { details: { ...this.businessOutcome.details } }),
+            },
+          }),
       ...(this.stopReason === undefined ? {} : { stopReason: this.stopReason }),
       ...(this.evidence === undefined ? {} : { evidence: { ...this.evidence } }),
       ...(this.interventions === 0 ? {} : { interventions: this.interventions }),

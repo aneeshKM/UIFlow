@@ -5,6 +5,7 @@ import type {
 } from "../artifact/types.js";
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
 import type { InterventionHandler } from "../escalation/types.js";
+import type { ApplicationState, BusinessOutcomeCode } from "../outcomes/types.js";
 
 export type ReplayStatus = "success" | "business_outcome" | "failure";
 
@@ -24,7 +25,7 @@ export interface ReplaySuccess {
 
 export interface ReplayBusinessOutcome {
   status: "business_outcome";
-  code: string;
+  code: BusinessOutcomeCode;
   stepId?: string;
   details?: Record<string, unknown>;
 }
@@ -61,16 +62,11 @@ export type CheckpointResult =
   | { success: true }
   | { success: false; expected: unknown; observed?: unknown; message: string };
 
-export type RuntimeState =
-  | { kind: "normal" }
-  | { kind: "member_not_found"; message: string }
-  | { kind: "session_expired"; message: string }
-  | { kind: "known_app_error"; message: string }
-  | { kind: "loading"; message: string };
+export type RuntimeState = ApplicationState;
 
 export type OutcomeDetectionResult =
   | { status: "normal" }
-  | { status: "business_outcome"; code: "MEMBER_NOT_FOUND"; details?: Record<string, unknown> }
+  | { status: "business_outcome"; code: BusinessOutcomeCode; details?: Record<string, unknown> }
   | ReplayFailure;
 
 export interface ReplayBrowserActions {

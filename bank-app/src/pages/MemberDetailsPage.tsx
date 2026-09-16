@@ -117,51 +117,61 @@ export default function MemberDetailsPage() {
           Accounts
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Account Number</th>
-              <th>Available Balance</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {member.accounts.map((account) => (
-              <tr key={account.id}>
-                <td>{account.type}</td>
-
-                <td>
-                  ****{account.account_number}
-                </td>
-
-                <td>
-                  $
-                  {account.available_balance.toLocaleString(
-                    "en-US",
-                    {
-                      minimumFractionDigits: 2,
-                    },
-                  )}
-                </td>
-
-                <td>{account.status}</td>
-
-                <td>
-                  <Link
-                    to={`/members/${member.id}/accounts/${account.id}`}
-                  >
-                    <button className="small-button">
-                      View
-                    </button>
-                  </Link>
-                </td>
+        {member.accounts.length === 0 ? (
+          <p
+            role="status"
+            aria-label={`No accounts found for member ${member.id}`}
+            className="empty-state"
+          >
+            No accounts found for member {member.id}.
+          </p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Account Number</th>
+                <th>Available Balance</th>
+                <th>Status</th>
+                <th>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody>
+              {member.accounts.map((account) => (
+                <tr key={account.id}>
+                  <td>{account.type}</td>
+
+                  <td>
+                    ****{account.account_number}
+                  </td>
+
+                  <td>
+                    $
+                    {account.available_balance.toLocaleString(
+                      "en-US",
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    )}
+                  </td>
+
+                  <td>{account.status}</td>
+
+                  <td>
+                    <Link
+                      to={`/members/${member.id}/accounts/${account.id}`}
+                    >
+                      <button className="small-button">
+                        View
+                      </button>
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         <div className="panel-actions">
           <Link

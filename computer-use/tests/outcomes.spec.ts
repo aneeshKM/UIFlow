@@ -51,7 +51,36 @@ test("maps member not found to a business outcome", async () => {
   await expect(detector.detect()).resolves.toEqual({
     status: "business_outcome",
     code: "MEMBER_NOT_FOUND",
-    details: { message: "No member found for ID 99999" },
+    details: { message: "No member found for ID 99999", memberId: "99999" },
+  });
+});
+
+test("maps an empty account collection to a business outcome", async () => {
+  const detector = new OutcomeDetector(
+    new SequenceObserver([observation("Accounts No accounts found for member 23458.")]),
+    actions(),
+  );
+
+  await expect(detector.detect()).resolves.toEqual({
+    status: "business_outcome",
+    code: "NO_ACCOUNTS_FOUND",
+    details: {
+      message: "No accounts found for member 23458",
+      memberId: "23458",
+    },
+  });
+});
+
+test("maps a missing requested account type to a business outcome", async () => {
+  const detector = new OutcomeDetector(
+    new SequenceObserver([observation("No Savings account found for member 12345.")]),
+    actions(),
+  );
+
+  await expect(detector.detect()).resolves.toMatchObject({
+    status: "business_outcome",
+    code: "ACCOUNT_TYPE_NOT_FOUND",
+    details: { accountType: "Savings", memberId: "12345" },
   });
 });
 

@@ -15,6 +15,8 @@ Rules:
 - For read, provide a stable camelCase outputName. Target a stable labeled container such as an account row, never the displayed value itself. Use only the stable prefix of its accessible name (for example Savings rather than the entire row). When the target text contains extra content, provide an extractionPattern regular expression whose first capture group selects only the requested value. The first capture group, or the whole match when there is no group, will be returned on the next turn. Patterns must describe the value format and must not contain digits copied from the observed value.
 - For navigate, provide the application URL or route in value.
 - For wait, do not provide a duration; the application applies a short bounded wait.
+- Do not choose wait unless the observation shows a transient loading state or a specific target is expected to appear.
+- Never repeat a successful action when the URL, settled page content, and known extracted values are unchanged.
 - Never request deletion, transfers, payments, account closure, record creation, uploads, or downloads.
 - Use read for every value the goal asks you to return, even when the value is already visible in the page observation.
 - Stop with finish only after every result value exists in Known extracted values.

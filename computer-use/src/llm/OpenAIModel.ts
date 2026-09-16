@@ -1,11 +1,11 @@
-import OpenAI from "openai";
+import OpenAI, { APIConnectionTimeoutError } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { AgentDecisionSchema, parseAgentDecision } from "../agent/actionSchema.js";
 import { buildDiscoveryPrompt, DISCOVERY_SYSTEM_PROMPT } from "../agent/prompt.js";
 import type { AgentDecision, AgentDecisionContext, AgentModel } from "../agent/types.js";
 
-export type OpenAIModelErrorCode = "api_error" | "invalid_response";
+export type OpenAIModelErrorCode = "api_error" | "invalid_response" | "timeout";
 
 export class OpenAIModelError extends Error {
   constructor(
@@ -22,6 +22,7 @@ export interface OpenAIModelOptions {
   apiKey: string;
   model: string;
   requestTimeoutMs?: number;
+  maxRetries?: number;
   client?: OpenAI;
 }
 
@@ -33,7 +34,7 @@ export class OpenAIModel implements AgentModel {
     this.client = options.client ?? new OpenAI({
       apiKey: options.apiKey,
       timeout: options.requestTimeoutMs,
-      maxRetries: 2,
+      maxRetries: options.maxRetries ?? 0,
     });
     this.model = options.model;
   }
@@ -63,6 +64,9 @@ export class OpenAIModel implements AgentModel {
       return parseAgentDecision(response.output_parsed);
     } catch (error) {
       if (error instanceof OpenAIModelError) throw error;
+      if (error instanceof APIConnectionTimeoutError) {
+        throw new OpenAIModelError("timeout", "OpenAI request timed out.", { cause: error });
+      }
       if (error instanceof z.ZodError) {
         throw new OpenAIModelError("invalid_response", "The model returned an invalid decision.", { cause: error });
       }
