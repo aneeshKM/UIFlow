@@ -44,7 +44,7 @@ function successfulRun(): DiscoveryRun {
           target: { role: "textbox", name: "Member Number" },
           value: "12345",
           inputName: "memberId",
-          reason: "Enter the requested member number.",
+          decisionSummary: "The member must be located using the visible Member Number field.",
         },
         result: { success: true, action: "type" },
       },
@@ -55,7 +55,7 @@ function successfulRun(): DiscoveryRun {
         decision: {
           action: "click",
           target: { role: "button", name: "Search" },
-          reason: "Search for member 12345.",
+          decisionSummary: "The visible Search button starts the requested member lookup.",
         },
         result: { success: true, action: "click" },
       },
@@ -63,7 +63,7 @@ function successfulRun(): DiscoveryRun {
         step: 3,
         url: search.url,
         observation: search,
-        decision: { action: "wait", reason: "Wait for search results." },
+        decision: { action: "wait", decisionSummary: "The observable search is still loading." },
         result: { success: true, action: "wait" },
       },
       {
@@ -73,7 +73,7 @@ function successfulRun(): DiscoveryRun {
         decision: {
           action: "click",
           target: { role: "link", name: "View" },
-          reason: "Open member 12345.",
+          decisionSummary: "The matching result has a visible View link.",
         },
         result: { success: true, action: "click" },
       },
@@ -86,7 +86,7 @@ function successfulRun(): DiscoveryRun {
           target: { role: "row", name: "Savings" },
           outputName: "currentSavingsBalance",
           extractionPattern: "\\$-?[0-9,]+\\.[0-9]{2}",
-          reason: "Read the requested balance.",
+          decisionSummary: "The visible Savings row contains the requested balance.",
         },
         result: { success: true, action: "read", value: "$4,281.50" },
       },
@@ -96,7 +96,7 @@ function successfulRun(): DiscoveryRun {
         observation: member,
         decision: {
           action: "finish",
-          reason: "The savings balance is $4,281.50.",
+          decisionSummary: "The requested balance has been extracted and verified.",
           result: { currentSavingsBalance: "$4,281.50" },
         },
         result: { success: true, action: "finish" },
@@ -138,14 +138,15 @@ test("builds a validated, parameterized artifact from a successful discovery", (
   expect(() => new ArtifactValidator().validate(artifact)).not.toThrow();
 });
 
-test("excludes concrete inputs, observed outputs, and model reasoning", () => {
+test("excludes concrete inputs, observed outputs, and decision summaries", () => {
   const artifact = new ArtifactBuilder({ now: () => new Date(timestamp) }).build(successfulRun());
   const serialized = JSON.stringify(artifact);
 
   expect(serialized).not.toContain("12345");
   expect(serialized).not.toContain("$4,281.50");
-  expect(serialized).not.toContain("Enter the requested member number");
-  expect(serialized).not.toContain("The savings balance is");
+  expect(serialized).not.toContain("decisionSummary");
+  expect(serialized).not.toContain("The member must be located");
+  expect(serialized).not.toContain("The requested balance has been extracted");
   expect(artifact.capability.description).toContain("{{memberId}}");
 });
 

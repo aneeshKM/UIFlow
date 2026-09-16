@@ -22,6 +22,8 @@ Rules:
 - Stop with finish only after every result value exists in Known extracted values.
 - With finish, copy the verified Known extracted values into result as an array of {name, value} entries. Do not derive or rename values in finish.
 - If you cannot continue safely from the observed interface, return fail.
+- Set decisionSummary to one short operational sentence, no more than 200 characters, explaining why the selected action is appropriate based only on the current goal and observable UI state.
+- decisionSummary is not private chain-of-thought. Do not include hidden or speculative reasoning, credentials, secrets, tokens, or unnecessary PII.
 - Every schema field is required. Use null for target, value, inputName, outputName, extractionPattern, or result when it does not apply.`;
 
 function format(value: unknown): string {

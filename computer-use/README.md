@@ -110,14 +110,14 @@ npm run discover -- \
   "Look up member 12345 and read their current savings balance"
 ```
 
-The command establishes the simulated login in trusted code, waits for the operations dashboard, starts tracing, and lets the bounded model loop choose the application section from the goal. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
+The command establishes the simulated login in trusted code, waits for the operations dashboard, starts tracing, and lets the bounded model loop choose the application section from the goal. For each model-decided step, the CLI prints a short operational decision summary. It writes a redacted discovery JSON record, screenshot, and trace in one UTC timestamped folder under `evidence/discovery/`. The checked-in canonical discovery can be built with this copy-pastable command:
 
 ```bash
 npm run artifact:build -- \
   evidence/discovery/2026-09-16_01-52-48__b7389084/discovery_b7389084.json
 ```
 
-For a new discovery, replace that path with the run JSON path printed by `discover`. The builder parameterizes discovered inputs, removes model reasoning and concrete outputs, creates semantic steps and checkpoints, and validates the final artifact before an atomic owner-only write. The checked-in example is `artifacts/get-member-savings-balance.v1.json`.
+For a new discovery, replace that path with the run JSON path printed by `discover`. The builder parameterizes discovered inputs, excludes operational decision summaries and concrete outputs, creates semantic steps and checkpoints, and validates the final artifact before an atomic owner-only write. The checked-in example is `artifacts/get-member-savings-balance.v1.json`.
 
 ## Run deterministic replay
 
@@ -171,7 +171,9 @@ Press Enter for the optional note. The same browser session transfers exclusivel
 
 ## Evidence
 
-Every run uses a consistent record with IDs, status, actions or completed steps, outputs or failure, duration, intervention count, and evidence paths. Run evidence lives under `evidence/discovery/` or `evidence/replay/` in a `YYYY-MM-DD_HH-mm-ss__<short-run-id>` folder, formatted in UTC. Intervention JSON and before/after screenshots live in that run folder's `interventions/<short-intervention-id>/` subfolder. JSON keeps full UUIDs and unchanged timestamps. JSON passes through `EvidenceWriter` and the recursive `Redactor` before reaching disk. Operator typed values are always recorded as `[REDACTED]`; observations redact form-control values. Screenshots and traces contain only the synthetic demo application and must receive deployment-specific retention and access controls with real customer data.
+Every run uses a consistent record with IDs, status, actions or completed steps, outputs or failure, duration, intervention count, and evidence paths. Run evidence lives under `evidence/discovery/` or `evidence/replay/` in a `YYYY-MM-DD_HH-mm-ss__<short-run-id>` folder, formatted in UTC. Intervention JSON and before/after screenshots live in that run folder's `interventions/<short-intervention-id>/` subfolder. JSON keeps full UUIDs and unchanged timestamps. JSON passes through `EvidenceWriter` and the recursive `Redactor` before reaching disk. Operator typed values are always recorded as `[REDACTED]`; observations redact form-control values.
+
+Discovery does not request or persist private model chain-of-thought. It may store `decisionSummary`, a redacted operational explanation of at most 200 characters based only on the goal and observable UI. This summary supports debugging and auditability but is not authoritative audit evidence; observed UI state, executed actions, results, and checkpoints remain the source of truth. Decision summaries are excluded from reusable capability artifacts and deterministic replay records. Screenshots and traces contain only the synthetic demo application and must receive deployment-specific retention and access controls with real customer data.
 
 The small checked-in review set is indexed in [evidence/README.md](evidence/README.md). New run folders remain ignored so routine demos do not pollute the repository.
 
@@ -183,7 +185,7 @@ The small checked-in review set is indexed in [evidence/README.md](evidence/READ
 - Discovery, replay, setup actions, observation, screenshots, and the operator console all pass through the policy-bound browser layer. `SessionControl` prevents concurrent human and automation ownership.
 - Artifacts are schema-validated on load and again by `ReplayEngine`; their own allowlist cannot expand the runtime policy.
 - Key-based recursive redaction covers passwords, API keys, authorization headers, cookies, session IDs, tokens, and client secrets, with value-pattern checks as defense in depth.
-- Evidence stores observations, selected actions, targets, and outcomes. It does not request or persist model chain-of-thought.
+- Evidence stores observations, selected actions, targets, outcomes, and bounded redacted operational decision summaries. It never requests or persists private model chain-of-thought, and summaries are not treated as authoritative evidence.
 
 ## Limitations
 

@@ -3,7 +3,7 @@
   "capability": {
     "id": "get-member-savings-balance",
     "name": "Get Member Savings Balance",
-    "description": "Look up member {{memberId}} and read their current savings balance",
+    "description": "check current savings balance for {{memberId}}",
     "version": 1
   },
   "target": {
@@ -26,15 +26,27 @@
   ],
   "steps": [
     {
-      "id": "navigate-members",
+      "id": "navigate-dashboard",
       "timeoutMs": 10000,
       "expected": {
         "kind": "url_matches",
-        "value": "/members"
+        "value": "/dashboard"
       },
       "action": "navigate",
       "value": {
-        "literal": "/members"
+        "literal": "/dashboard"
+      }
+    },
+    {
+      "id": "click-members",
+      "timeoutMs": 10000,
+      "expected": {
+        "kind": "action_succeeds"
+      },
+      "action": "click",
+      "target": {
+        "role": "link",
+        "name": "Members"
       }
     },
     {
@@ -105,7 +117,7 @@
         "name": "Savings"
       },
       "output": "savingsBalance",
-      "pattern": "(\\$-?[\\d,]+\\.\\d{2})"
+      "pattern": "\\$([\\d,]+\\.\\d{2})"
     }
   ],
   "checkpoint": {
@@ -127,15 +139,15 @@
   "policy": {
     "allowedActions": [
       "navigate",
-      "type",
       "click",
+      "type",
       "wait_for",
       "extract"
     ],
     "riskLevel": "safe"
   },
   "metadata": {
-    "createdAt": "2026-09-16T02:08:22.548Z",
-    "sourceRunId": "b7389084-a42b-437c-ae3a-bbab983a393a"
+    "createdAt": "2026-09-16T04:10:19.998Z",
+    "sourceRunId": "77008f59-c4be-4fb4-b03e-eb00ac407a0a"
   }
 }

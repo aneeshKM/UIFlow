@@ -20,7 +20,7 @@ export interface AgentDecision {
   inputName?: string;
   outputName?: string;
   extractionPattern?: string;
-  reason: string;
+  decisionSummary: string;
   result?: Record<string, string>;
 }
 

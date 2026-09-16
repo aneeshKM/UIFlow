@@ -1,6 +1,11 @@
 import type { ActionResult, LocatorSpec, SurfaceObservation } from "../browser/types.js";
 import { evidenceWriter } from "../evidence/EvidenceWriter.js";
-import { isSensitiveKey, redactObservation, redactValue } from "../evidence/Redactor.js";
+import {
+  isSensitiveKey,
+  redactObservation,
+  redactValue,
+  sanitizeDecisionSummary,
+} from "../evidence/Redactor.js";
 import type { ActionPolicy } from "../policy/ActionPolicy.js";
 import { PolicyViolation } from "../policy/ActionPolicy.js";
 import type {
@@ -71,6 +76,23 @@ function observationFingerprint(observation: SurfaceObservation): string {
   return `${observation.url}\n${observation.ariaSnapshot}\n${observation.visibleText}`;
 }
 
+function surfaceContentFingerprint(observation: SurfaceObservation): string {
+  return `${observation.title}\n${observation.ariaSnapshot}\n${observation.visibleText}`;
+}
+
+function isStaleRouteTransition(
+  previous: SurfaceObservation | undefined,
+  current: SurfaceObservation,
+  decision: AgentDecision | undefined,
+  result: ActionExecutionResult | undefined,
+): boolean {
+  return previous !== undefined
+    && result?.success === true
+    && (decision?.action === "click" || decision?.action === "navigate")
+    && previous.url !== current.url
+    && surfaceContentFingerprint(previous) === surfaceContentFingerprint(current);
+}
+
 function repeatedActionSignature(decision: AgentDecision, currentUrl: string): string | undefined {
   if (!["click", "type", "navigate", "wait"].includes(decision.action)) return undefined;
   return JSON.stringify({
@@ -87,7 +109,9 @@ export function redactDiscoveryRun(run: DiscoveryRun): DiscoveryRun {
     const decision = step.decision;
     step.observation.ariaSnapshot = redactObservation(step.observation.ariaSnapshot);
     step.observation.visibleText = redactObservation(step.observation.visibleText);
-    if (decision !== undefined) delete (decision as Partial<AgentDecision>).reason;
+    if (decision !== undefined) {
+      decision.decisionSummary = sanitizeDecisionSummary(decision.decisionSummary);
+    }
     const targetName = `${decision?.target?.name ?? ""} ${decision?.target?.text ?? ""}`;
     if (decision?.value !== undefined && isSensitiveKey(targetName)) {
       decision.value = "[REDACTED]";
@@ -173,6 +197,7 @@ export class DiscoveryAgent {
     let stepLimit = this.options.maxSteps;
     const stallLimit = this.options.stallLimit ?? 2;
     let lastObservationFingerprint: string | undefined;
+    let lastSettledObservation: SurfaceObservation | undefined;
     let repeatedObservationCount = 0;
     let loadingRetries = 0;
     const repeatedActions = new Map<string, number>();
@@ -203,6 +228,7 @@ export class DiscoveryAgent {
         controller = new AbortController();
         timeout = this.startTimeout(controller);
         lastObservationFingerprint = undefined;
+        lastSettledObservation = undefined;
         repeatedObservationCount = 0;
         loadingRetries = 0;
         repeatedActions.clear();
@@ -233,6 +259,40 @@ export class DiscoveryAgent {
         let observation: SurfaceObservation;
         try {
           observation = await withAbort(this.observer.observe(), controller.signal);
+          if (isStaleRouteTransition(
+            lastSettledObservation,
+            observation,
+            state.lastDecision,
+            state.lastResult,
+          )) {
+            const waitResult = await withAbort(
+              this.actions.wait(this.options.waitDurationMs ?? 500),
+              controller.signal,
+            );
+            if (!waitResult.success) {
+              return this.complete(
+                state,
+                "failure",
+                `route_transition_wait_failed: ${waitResult.error?.message}`,
+              );
+            }
+            observation = await withAbort(this.observer.observe(), controller.signal);
+            if (isStaleRouteTransition(
+              lastSettledObservation,
+              observation,
+              state.lastDecision,
+              state.lastResult,
+            )) {
+              const resolution = await intervene(
+                "AGENT_TIMEOUT",
+                "The application URL changed, but the observable UI did not update after one bounded retry.",
+              );
+              if (resolution === "resume") continue;
+              if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
+              if (resolution === "error") return this.complete(state, "failure", "intervention_error");
+              return this.complete(state, "stopped", "route_transition_timeout");
+            }
+          }
         } catch (error) {
           if (error instanceof DiscoveryTimeoutError || controller.signal.aborted) {
             const resolution = await intervene("AGENT_TIMEOUT", "Discovery timed out while observing the browser.");
@@ -248,6 +308,7 @@ export class DiscoveryAgent {
         }
 
         const step = state.recordObservation(observation);
+        lastSettledObservation = observation;
         const applicationState = classifyApplicationState(observation);
         if (applicationState.kind === "business_outcome") {
           state.setBusinessOutcome(applicationState.outcome);
@@ -277,7 +338,7 @@ export class DiscoveryAgent {
           loadingRetries += 1;
           const decision: AgentDecision = {
             action: "wait",
-            reason: "Wait once for the application to leave its transient loading state.",
+            decisionSummary: "The observable UI is still loading, so a short bounded wait is appropriate.",
           };
           state.recordDecision(step, decision);
           const result = fromBrowserResult(
@@ -323,6 +384,10 @@ export class DiscoveryAgent {
             extractedOutputs: state.extractedOutputs,
             signal: controller.signal,
           }), controller.signal);
+          decision = {
+            ...decision,
+            decisionSummary: sanitizeDecisionSummary(decision.decisionSummary),
+          };
         } catch (error) {
           if (error instanceof DiscoveryTimeoutError || controller.signal.aborted || isModelTimeout(error)) {
             const resolution = await intervene(
@@ -459,6 +524,8 @@ export class DiscoveryAgent {
         state.recordResult(step, result);
         if (decision.action === "read" && result.success && result.value !== undefined && decision.outputName !== undefined) {
           state.setOutput(decision.outputName, result.value);
+          lastObservationFingerprint = undefined;
+          repeatedObservationCount = 0;
           repeatedActions.clear();
         }
         if (decision.action === "finish" && decision.result !== undefined) state.setOutputs(decision.result);
@@ -468,14 +535,14 @@ export class DiscoveryAgent {
         if (decision.action === "fail") {
           const resolution = await intervene(
             "AGENT_STUCK",
-            `The discovery model stopped: ${decision.reason}`,
+            `The discovery model stopped: ${decision.decisionSummary}`,
             undefined,
             step.step,
           );
           if (resolution === "resume") continue;
           if (resolution === "abort") return this.complete(state, "failure", "human_aborted");
           if (resolution === "error") return this.complete(state, "failure", "intervention_error");
-          return this.complete(state, "failure", `model_failed: ${decision.reason}`);
+          return this.complete(state, "failure", `model_failed: ${decision.decisionSummary}`);
         }
       }
     } finally {
@@ -526,7 +593,7 @@ export class DiscoveryAgent {
         return {
           success: false,
           action: "fail",
-          error: { type: "MODEL_FAILED", message: decision.reason },
+          error: { type: "MODEL_FAILED", message: decision.decisionSummary },
         };
     }
   }

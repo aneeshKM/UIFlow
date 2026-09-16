@@ -10,7 +10,7 @@ The current surface adapter is Playwright. The artifact does not contain `page.l
 
 ## 2. Artifact schema
 
-The versioned JSON artifact contains capability identity, target application and base URL, typed runtime inputs and outputs, ordered semantic steps, per-step expectations and timeouts, a final checkpoint, policy metadata, and source metadata. The current identity is capability ID plus capability version; future registry identity would add vendor, product, and product version.
+The versioned JSON artifact contains capability identity, target application and base URL, typed runtime inputs and outputs, ordered semantic steps, per-step expectations and timeouts, a final checkpoint, policy metadata, and source metadata. The current identity is capability ID plus capability version; future registry identity would add vendor, product, and product version. Discovery-only operational decision summaries are deliberately excluded from capability and deterministic replay artifacts.
 
 Supported artifact actions are `navigate`, `click`, `type`, `extract`, `wait_for`, and `assert`. Targets prefer ARIA role and accessible name, with label, text, placeholder, test ID, and ordered semantic fallbacks. Runtime values are input references or templates. Outputs are created only by declared extraction steps.
 
@@ -40,7 +40,9 @@ The intervention record includes intervention/run IDs, source, capability and fa
 
 `ActionPolicy` centralizes the action allowlist, configured origin and route-prefix allowlists, and `SAFE`, `REQUIRES_HUMAN`, and `BLOCKED` decisions. Browser actions check ownership and policy before touching the page, then verify the resulting URL. Discovery validates model decisions before execution. Replay validates both the artifact and every step. Operator commands stay inside the same browser boundary.
 
-`EvidenceWriter` sanitizes JSON before persistence through one recursive `Redactor`. Key-based rules cover passwords, passcodes, API keys, authorization, cookies, session IDs, tokens, and client secrets; pattern rules cover common bearer/API-key strings and selected PII formats. Operator typed values and form-control observations receive contextual redaction. Evidence records observable state, chosen actions, targets, results, and failures rather than chain-of-thought. Artifact validation rejects sensitive fields and common secret values.
+`EvidenceWriter` sanitizes JSON before persistence through one recursive `Redactor`. Key-based rules cover passwords, passcodes, API keys, authorization, cookies, session IDs, tokens, and client secrets; pattern rules cover common bearer/API-key strings and selected PII formats. Operator typed values and form-control observations receive contextual redaction.
+
+Discovery never requests or persists private model chain-of-thought. For debugging and auditability, each model decision may include `decisionSummary`: one short operational sentence, bounded to 200 characters, derived only from the goal and observable UI, and passed through centralized redaction. The summary is not authoritative audit evidence; observable UI state, executed actions, results, and checkpoints remain the source of truth. Decision summaries are excluded from reusable capability artifacts and deterministic replay records. Artifact validation rejects sensitive fields and common secret values.
 
 The demo data is synthetic. Binary screenshots and traces are not content-redacted, and the current redactor is not a replacement for institution-specific data classification. A production system needs encrypted evidence, retention and deletion controls, tenant isolation, enterprise secret management, RBAC, and audit review.
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DECISION_SUMMARY_MAX_LENGTH, sanitizeDecisionSummary } from "../evidence/Redactor.js";
 import type { AgentDecision, AgentRole } from "./types.js";
 
 export const AgentRoles = [
@@ -53,7 +54,11 @@ export const AgentDecisionSchema = z.object({
   inputName: z.string().nullable(),
   outputName: z.string().nullable(),
   extractionPattern: z.string().nullable(),
-  reason: z.string(),
+  decisionSummary: z.string()
+    .min(1)
+    .max(DECISION_SUMMARY_MAX_LENGTH)
+    .regex(/^[^\r\n]*\S[^\r\n]*$/, "decisionSummary must be a nonblank, single-line sentence.")
+    .describe("One short operational sentence based only on the goal and observable UI that explains why the selected action is appropriate. Never include private chain-of-thought, speculation, credentials, secrets, tokens, or unnecessary PII."),
   result: z.array(AgentOutputSchema).nullable(),
 }).strict();
 
@@ -79,7 +84,7 @@ export function parseAgentDecision(input: unknown): AgentDecision {
     ...(parsed.inputName === null ? {} : { inputName: parsed.inputName }),
     ...(parsed.outputName === null ? {} : { outputName: parsed.outputName }),
     ...(parsed.extractionPattern === null ? {} : { extractionPattern: parsed.extractionPattern }),
-    reason: parsed.reason,
+    decisionSummary: sanitizeDecisionSummary(parsed.decisionSummary),
     ...(result === undefined ? {} : { result }),
   };
 }

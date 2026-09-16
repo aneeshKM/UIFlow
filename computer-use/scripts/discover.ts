@@ -38,6 +38,9 @@ function printStep(step: AgentStep): void {
   console.log(`\nStep ${step.step}`);
   console.log(`Action: ${step.decision?.action ?? "none"}`);
   console.log(`Target: ${targetLabel(step)}`);
+  if (step.decision?.decisionSummary !== undefined) {
+    console.log(`Decision: ${step.decision.decisionSummary}`);
+  }
   console.log(`Result: ${step.result?.success ? "success" : step.result?.error?.type ?? "not executed"}`);
   if (step.decision?.action === "read" && step.result?.value !== undefined) {
     console.log(`Value: ${step.result.value}`);

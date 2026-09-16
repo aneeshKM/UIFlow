@@ -14,20 +14,28 @@ export class SurfaceObserver {
   async observe(owner: ControlOwner = "AUTOMATION"): Promise<SurfaceObservation> {
     this.sessionControl?.assertOwner(owner);
     const page = this.session.getPage();
-    this.policy.assertAllowed({ action: "observe", owner, currentUrl: page.url() });
-    const body = page.locator("body");
-    const [title, visibleText, ariaSnapshot] = await Promise.all([
-      page.title(),
-      body.innerText(),
-      body.ariaSnapshot(),
-    ]);
-    return {
-      url: page.url(),
-      title,
-      visibleText,
-      ariaSnapshot,
-      timestamp: new Date().toISOString(),
-    };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const urlBefore = page.url();
+      this.policy.assertAllowed({ action: "observe", owner, currentUrl: urlBefore });
+      const body = page.locator("body");
+      const [title, visibleText, ariaSnapshot] = await Promise.all([
+        page.title(),
+        body.innerText(),
+        body.ariaSnapshot(),
+      ]);
+      const urlAfter = page.url();
+      if (urlBefore === urlAfter) {
+        return {
+          url: urlAfter,
+          title,
+          visibleText,
+          ariaSnapshot,
+          timestamp: new Date().toISOString(),
+        };
+      }
+      await page.waitForTimeout(50);
+    }
+    throw new Error("The application URL changed repeatedly while capturing the observable UI.");
   }
 
   async captureScreenshot(owner: ControlOwner = "AUTOMATION"): Promise<Buffer> {
